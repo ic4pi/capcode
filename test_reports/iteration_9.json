@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 9 verification of the trial-repricing / annual-billing / prices-endpoint session plus the 3 fixes iteration_8 requested. Backend: 14 pytest cases (11 API + 3 billing-cycle unit) all pass — GET /api/tier/prices returns the exact expected trial 2.99 one_time / paid 16.0 month / paid_annual 192.0 year contract, is public + cache-consistent, and leaks no _id; /api/tier/checkout auth-gates every plan value (paid, paid_annual, trial, bogus, empty body) with 401 and never 500s; /api/tier/start-trial gate passes with ALLOW_MOCK_BILLING=true (401 auth gate); billing.get_cycle() lazy 30-day renewal verified directly against docdb (expired cycle with 0 credits refills to full $8/$4 pools and a future cycle_end); cancel_cycle -> get_cycle None. Frontend: monthly/annual toggle flips plan-paid-amount $16 /mo <-> $192 /yr and back, extra annual feature line appears; trial card shows $2.99 one-time + 'COVERS ITS OWN COST' badge, no '$0'/'NO CARD NEEDED' anywhere; both trial and paid CTAs (signed out: 'Sign in to start trial' / 'Sign in to upgrade') redirect to the real Google/Neon sign-in page with no error toast. pricing-back now returns to the correct origin (landing->landing, build-view->build-view). REGRESSIONS: full checkpointed pipeline (teacher->artist->execute->correct->rate->score + refinement loop) completed end to end on an openrouter-configured session, producing a generation card, download .zip, verify (VERIFIED BUILD after click) and inline push-to-github panel; chain-history filter all/verified works. Failure path with the broken groq default now surfaces a clear 'Teacher got no response from its model...' error (422 TeacherFailedError, not a silently faked spec) AND the failed chain appears in 'Prior builds' immediately with no reload — both iteration_8 fixes confirmed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/tier/checkout", "issue": "plan-value validation is unreachable for anonymous callers (401 auth gate runs first), so the 400 'plan must be paid|paid_annual|trial' branch could not be exercised in this env; verified by code review only (order is correct/secure, just untestable without a real Neon JWT)"},
+      {"endpoint": "/api/tier/start-trial", "issue": "the new 410 deprecation gate cannot be exercised here because ALLOW_MOCK_BILLING=true in backend/.env; anonymous call returns 401 (gate passed). Verified by code review that the gate is the first statement in the handler"},
+      {"endpoint": "/api/auth/me", "issue": "returns 401 for signed-out visitors and the frontend calls it several times per page load, producing 5-10 red console errors on every route. Cosmetic but noisy — consider 200 {user:null} or skipping the call when no JWT exists"},
+      {"endpoint": "pre-existing suites", "issue": "tests/test_ownership.py (3 fails: signed-in JWT cases + one 400 'no session identity') and tests/test_security_fixes.py (2 fails + 3 errors: sandbox run.sh exits 126 in this container) fail for env reasons unrelated to this session's changes"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Pricing -> Settings origin (settings-see-plans)", "issue": "NOT TESTABLE: data-testid='settings-see-plans' is only rendered when signed in, and no test Google account exists (no backdoor). Settings panel signed-out shows billing-section + 'SIGN IN WITH GOOGLE TO SUBSCRIBE FOR CREDITS' as designed. Landing and build-view origins for pricing-back were both verified working.", "affected_selectors": ["settings-see-plans"]}
+    ],
+    "design_issues": [
+      {"screen": "Build view pipeline report (STILL OPEN from iteration_8)", "issues": ["Contradictory stage wording persists on the happy path: 'EXECUTE :: Build failed to start (exit code -15). Needs a correction pass.' is immediately followed by 'CORRECT :: No correction needed — build was already working.', yet the header renders 'PRODUCT BUILD' with a '✓ WORKS — VERIFY' button. A static HTML build that never listens on a port is reported as both failed-to-start and working."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9_pricing.py",
+    "/app/backend/tests/test_iteration9_billing_cycle.py",
+    "/app/test_reports/pytest/it9_pricing.xml",
+    "/app/test_reports/pytest/it9_billing.xml",
+    "/app/test_reports/pytest/it9_regression.xml"
+  ],
+  "action_items": [
+    "Fix the contradictory EXECUTE/CORRECT report wording (and the '✓ WORKS' claim) when the sandbox exits -15 / never binds a port — iteration_8 flagged this and it is still present on a fully successful build",
+    "Optional: stop the signed-out /api/auth/me 401 spam in the browser console (return 200 {user:null} or gate the call on jwt presence)",
+    "Env gap (still, not in scope): GROQ_API_KEY absent, so every default anonymous free-tier build fails at the Teacher step — the new error copy is clear now, but out-of-the-box free builds cannot succeed in this preview env"
+  ],
+  "critical_code_review_comments": [
+    "providers.TIER_ASSIGNMENTS['trial'] and TRIAL_FALLBACKS are correctly NVIDIA-only across all 6 roles — no OpenRouter/Venice leak on the fallback path; chain_generator._call_role branches on tier=='trial' before touching DEFAULT_ASSIGNMENTS' *_fallback entries",
+    "tiers.get_prices() caches for 1h in a module-global; a Stripe price change won't reflect for up to an hour and there is no cache-bust query param — acceptable, but worth an explicit ?refresh=1 like /providers/models has",
+    "billing.get_cycle() calls start_cycle() on expiry, which resets balances even if the underlying Stripe subscription has lapsed without a webhook arriving (e.g. failed annual renewal) — the only guard is status=='active'. Consider checking a paid-through timestamp before refilling",
+    "PricingPage merges the /prices response over DEFAULT_PRICES without validating shape; a malformed plan object (missing amount) would throw in fmt(). A guard on typeof amount === 'number' would make it fail soft"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration9_pricing.py",
+    "/app/backend/tests/test_iteration9_billing_cycle.py"
+  ],
+  "success_rate": {"backend": "100% (14/14 new iteration-9 cases; pre-existing env-blocked suites excluded)", "frontend": "100% of testable cases (8/8; settings-origin pricing-back untestable without a signed-in account)"},
+  "seed_data_creation": "Anonymous sessions 'qa-it9-ok' (openrouter openai/gpt-4o-mini teacher+artist, gpt-3.5-turbo rater — one completed+verified chain 0cb81f9c) and 'qa-it9-fail' (groq assignments, one intentionally failed chain f95188a2). Postgres docdb user 'TEST_it9_billing_user' billing cycles are cleaned up by the test fixture.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md — anonymous X-Capcode-Session flow only; no Google/Neon test account exists, so signed-in checkout completion and settings-see-plans remain unverifiable in this env",
+  "context_for_next_testing_agent": "All 3 iteration_8 issues are FIXED and verified (handleEvolve refresh() on failure, TeacherFailedError surfacing a clear 422 message, pricing-back returning to origin). New toggle/annual/$2.99-trial/prices-endpoint behavior all verified. Remaining known gaps: (1) no GROQ_API_KEY so default free builds fail at Teacher — use localStorage 'capcode.session_id'='qa-it9-ok' (already seeded with working openrouter models) to exercise the pipeline; full run takes ~60-90s including the refinement loop. (2) signed-in-only paths (real checkout, settings-see-plans link, /api/billing/status subscribed branch, trial 409 re-use) still need a real Neon Auth JWT. (3) EXECUTE/CORRECT contradictory wording is the only open functional/UX defect.",
+  "rca_of_the_issue": "Iteration_8's 'failed chains missing from history' was caused by handleEvolve's catch block never calling refresh(); confirmed fixed (App.js:156). 'Silently faked spec' was teacher_step defaulting on an empty LLM response; now raises TeacherFailedError, caught in server.py:780 -> 422 with an actionable message, observed live in the browser. 'pricing-back always to landing' fixed via pricingReturnView + openPricing(from) (App.js:43-45, 220), verified for the landing and build origins."
+}

@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend-only regression + fix verification for the checkpointed advance-loop P0 fix. CORE FIX VERIFIED: a real browser build (session with openrouter overrides applied) drove the full 6-stage pipeline end-to-end via UI clicks alone (no curl) -- LIVE PROGRESS panel showed teacher->artist->execute->correct->rate->score entries in order, build ended in a 'PRODUCT BUILT' toast with a generation card (files, score bars, composite 1.60), download/verify/push all worked, and the chain persisted in Prior builds and reopened correctly via history click. All requested regressions (landing page, chain-history, verify, download-chain/download-gen, push-to-github dialog, settings panel) pass. Found ONE new backend defect while testing the failure path: BUILD FAILED renders correctly and the loop does NOT hang (good), but the error message text is never shown because the `Chain` Pydantic response_model in server.py is missing an `error` field, so FastAPI silently strips the `error` string that /advance correctly writes to MongoDB on failure (verified via direct fetch: chain.status='failed' but chain.error=None). This breaks the acceptance criterion 'shows BUILD FAILED state with the error message visible'.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/chains/{chain_id} (and GET /api/chains list)",
+        "issue": "Pydantic `Chain` model (server.py ~line 79-90) has no `error` field. response_model=Chain silently drops the `error` string that POST /api/chains/{id}/advance correctly persists to db.chains on both ArtistFailedError (422) and generic Exception (500) paths. Reproduced 2/2 times via direct fetch inside the browser session: {status: 'failed', error: None}. Net effect: the UI's BUILD FAILED card never shows the error/reason text (ChainViewer.jsx's `chain.status === 'failed' && chain.error && (...)` block never renders since chain.error is always null over the wire), even though the backend computed and stored a real error string.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/chains/{id}/advance (CORRECT stage report text)",
+        "issue": "In one successful build, EXECUTE report said 'Build failed to start (exit code -15). Needs a correction pass.' but the very next CORRECT report said 'No correction needed — build was already working.' — contradictory human-readable text; chain still completed with a low composite score (1.60) and critic notes showing 'Ran: False. Exit: -15. Port listening: False.' Cosmetic/report-copy bug in chain_generator.py's correct-stage messaging, not a hang/crash."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Build failure display",
+        "issue": "chain-error text block (data-testid='chain-error') never renders on a failed build because chain.error is always null from the API (see backend_issues.critical above) -- this is a backend serialization bug, not a frontend rendering bug; ChainViewer.jsx code itself is correct and would render the text if chain.error were present.",
+        "affected_selectors": ["[data-testid='chain-error']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add `error: Optional[str] = None` to the `Chain` Pydantic model in server.py so GET /api/chains/{id} and GET /api/chains stop stripping the persisted error string.",
+    "Optional: fix the contradictory CORRECT-stage report text when EXECUTE failed but no correction pass actually ran (chain_generator.py)."
+  ],
+  "critical_code_review_comments": [
+    "server.py's Chain model uses `extra='ignore'`, which is a common source of this class of bug -- any new field added to the DB doc (like `error`) must also be manually added to the Pydantic model or it is silently dropped by response_model serialization. Worth grepping for other fields written via $set that aren't in the Chain model (e.g. confirmed only `error` missing this pass).",
+    "The advance-loop fix itself (App.js handleEvolve while-loop, api.advanceChain, ChainViewer advance-log panel) is correctly implemented and verified working end-to-end through real browser interaction -- no loop/hang issues found, 429 handling path not exercised (didn't hit rate limits) but code looks correct on read."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only scope; 1 backend defect found incidentally)", "frontend": "100% (all requested regression flows pass)"},
+  "test_credentials": "None required (anonymous session flow); used session ids testsess-1786581332 (openrouter override, successful build) and testsess-fail2-1786581744 (default free-tier keys, clean failure path)",
+  "seed_data_creation": "Created 2 test chains via UI ('a simple todo list app') under test sessions above -- not cleaned up (harmless anon test data, chain ids 54d6b3ad-a041-48db-be45-f7c8e47ef12a and 95a9fb13-1735-402d-a5de-3b4b1e465fb4).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The P0 advance-loop fix is solid and verified end-to-end via real browser clicks (not just curl) -- do not re-test that unless code changes again. The one open item is the missing `error` field on the Chain Pydantic model causing chain.error to always serialize as null; that's a 2-line backend fix (add the field to the model) and should be trivial for main agent to self-verify with: build with default/invalid keys to force ArtistFailedError, then GET /api/chains/{id} and confirm `error` is a non-null string, then re-check the UI shows the text under BUILD FAILED.",
+  "rca_of_the_issue": "advance_chain() in server.py correctly does db.chains.update_one({..}, {'$set': {'status':'failed','error':str(exc), ...}}) on failure -- the DB document itself has the error string. But GET /chains/{id} and GET /chains both declare response_model=Chain, and the Chain(BaseModel) class never declares an `error` field. FastAPI/Pydantic response_model serialization only emits declared fields, so `error` is dropped before it reaches the frontend. Frontend ChainViewer.jsx already correctly guards on `chain.status === 'failed' && chain.error` before rendering the error paragraph, so it just never renders because the value is undefined/null. Fix: add `error: Optional[str] = None` to class Chain."
+}

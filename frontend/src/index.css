@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 240 8% 5%;
+  --foreground: 240 10% 92%;
+  --card: 235 12% 10%;
+  --card-foreground: 240 10% 92%;
+  --popover: 235 12% 10%;
+  --popover-foreground: 240 10% 92%;
+  --primary: 345 100% 56%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 60 90% 52%;
+  --secondary-foreground: 0 0% 6%;
+  --muted: 235 10% 14%;
+  --muted-foreground: 235 6% 60%;
+  --accent: 60 90% 52%;
+  --accent-foreground: 0 0% 6%;
+  --destructive: 0 85% 58%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 235 12% 20%;
+  --input: 235 12% 20%;
+  --ring: 345 100% 56%;
+  --radius: 8px;
+}
+
+html, body, #root {
+  background: #0A0A0C;
+  color: #EDEDF0;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.font-display {
+  font-family: 'Inter', ui-sans-serif, sans-serif;
+}
+
+.panel {
+  background: #15171D;
+  border: 1px solid #2A2E38;
+  border-radius: 10px;
+  position: relative;
+}
+
+/* selection */
+::selection { background: #FF1F5E; color: #fff; }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0A0A0C; }
+::-webkit-scrollbar-thumb { background: #2A2E38; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #3A3F4C; }
+
+/* utility: tight uppercase tracking label */
+.label-xs {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+input, textarea, button { font-family: inherit; }
+input:focus, textarea:focus { outline: none; }

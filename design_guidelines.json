@@ -1,0 +1,143 @@
+{
+  "theme": "DARK",
+  "archetype": "Archetype 7: Electric & Neon (Retro-Futuristic BBS Variant)",
+  "rationale": "The requirement explicitly asks for a Dark 1980s neo-noir bulletin board system (BBS) with neon punk retro-futuristic dark aesthetics. This perfectly matches a modified Archetype 7. We prioritize deep void blacks, sharp geometric structures, glowing phosphor greens, electric cyan/magenta accents, and mandatory monospace typography to capture the terminal hacker vibe.",
+  "colors": {
+    "backgrounds": {
+      "app_bg": "#030503",
+      "panel_bg": "#080c08",
+      "terminal_bg": "#000000",
+      "crt_tint": "rgba(0, 255, 0, 0.02)"
+    },
+    "text": {
+      "primary": "#39FF14",
+      "secondary": "#1F8A0E",
+      "muted": "#124B08",
+      "inverted": "#000000"
+    },
+    "accents": {
+      "neon_magenta": "#FF00FF",
+      "neon_cyan": "#00FFFF",
+      "electric_yellow": "#FFEA00",
+      "amber_warning": "#FFB000",
+      "error_red": "#FF3B30"
+    },
+    "borders": {
+      "default": "rgba(57, 255, 20, 0.3)",
+      "active": "rgba(57, 255, 20, 0.8)",
+      "accent_magenta": "rgba(255, 0, 255, 0.5)"
+    },
+    "shadows": {
+      "neon_glow_green": "0 0 10px rgba(57, 255, 20, 0.3), 0 0 20px rgba(57, 255, 20, 0.1)",
+      "neon_glow_magenta": "0 0 10px rgba(255, 0, 255, 0.4)"
+    }
+  },
+  "typography": {
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap');"
+    ],
+    "font_families": {
+      "heading": "'VT323', monospace",
+      "body": "'IBM Plex Mono', monospace"
+    },
+    "tailwind_config": {
+      "fontFamily": {
+        "bbs": ["'VT323'", "monospace"],
+        "mono": ["'IBM Plex Mono'", "monospace"]
+      }
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-bbs tracking-widest text-[#39FF14] uppercase drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]",
+      "h2": "text-2xl sm:text-3xl font-bbs tracking-wide text-[#39FF14] uppercase",
+      "h3": "text-xl font-mono font-medium text-[#FF00FF] uppercase tracking-[0.1em]",
+      "body": "text-sm sm:text-base font-mono text-[#39FF14] leading-relaxed",
+      "small_label": "text-xs font-mono text-[#00FFFF] uppercase tracking-widest"
+    }
+  },
+  "spacing_and_layout": {
+    "grid_strategy": "Control Room / Asymmetric BBS Panels",
+    "container_padding": "p-4 sm:p-6 lg:p-8",
+    "gap": "gap-4 sm:gap-6",
+    "rules": [
+      "No rounded corners on core structural panels (rounded-none).",
+      "1px solid borders everywhere to expose the grid skeleton.",
+      "Containers must use border-collapse style alignment to feel like a terminal application."
+    ]
+  },
+  "surfaces_and_effects": {
+    "crt_monitor_effect": {
+      "container_classes": "relative overflow-hidden bg-black font-mono shadow-[0_0_30px_rgba(57,255,20,0.15)]",
+      "scanlines_overlay": "pointer-events-none absolute inset-0 opacity-20 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04)_50%,rgba(0,0,0,0.18)_50%)] bg-[length:100%_4px] z-50",
+      "rgb_tint": "pointer-events-none absolute inset-0 opacity-10 bg-[linear-gradient(90deg,rgba(255,0,255,0.04),rgba(57,255,20,0.02),rgba(0,255,255,0.04))] z-50",
+      "vignette": "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_50%,rgba(0,0,0,0.8)_100%)] z-50"
+    },
+    "panel": {
+      "classes": "bg-[#080c08] border border-[#39FF14]/30 p-6 relative group"
+    },
+    "animations": {
+      "flicker": "@keyframes flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.92; } }",
+      "blink": "@keyframes blink { 50% { opacity: 0; } }",
+      "glitch": "Add chromatic aberration via text-shadows on hover (e.g., text-shadow: 2px 0 #FF00FF, -2px 0 #00FFFF)"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-transparent border border-[#39FF14] text-[#39FF14] hover:bg-[#39FF14] hover:text-black font-mono uppercase px-6 py-2 transition-colors duration-200 cursor-pointer shadow-[0_0_10px_rgba(57,255,20,0.2)] hover:shadow-[0_0_20px_rgba(57,255,20,0.6)] rounded-none",
+      "secondary": "bg-transparent border border-[#00FFFF]/50 text-[#00FFFF] hover:bg-[#00FFFF] hover:text-black font-mono uppercase px-4 py-2 transition-colors duration-200 rounded-none"
+    },
+    "prompt_console": {
+      "description": "BBS Terminal Input",
+      "structure": "A black container with green border, preceded by a 'system@ai-bbs:~$' prompt, featuring a blinking block cursor.",
+      "classes": "w-full bg-black border border-[#39FF14]/50 text-[#39FF14] font-mono p-4 outline-none focus:border-[#39FF14] focus:shadow-[0_0_15px_rgba(57,255,20,0.3)] resize-none"
+    },
+    "pipeline_visualization": {
+      "description": "Generator -> Critic -> Rater",
+      "style": "Use ASCII arrows (===>) or solid 1px neon cyan lines to connect stages. Active stage blinks or has a glowing magenta border.",
+      "stage_card": "border border-[#39FF14]/30 p-4 relative. Include a small [STATUS: ACTIVE] blinking label at the top right."
+    },
+    "artifact_viewer": {
+      "description": "JSON / Spec viewer",
+      "classes": "bg-[#000000] border-l-2 border-[#FF00FF] p-4 text-sm font-mono overflow-auto",
+      "syntax_highlighting": "Keys in neon cyan (#00FFFF), Strings in amber (#FFB000), Brackets in muted green (#1F8A0E)."
+    },
+    "rater_scorecards": {
+      "description": "CRT readouts for metrics",
+      "style": "ASCII progress bars. e.g., 'HELPFULNESS: [||||||||....] 80%'.",
+      "classes": "flex items-center justify-between font-mono text-sm border-b border-[#39FF14]/20 py-2"
+    },
+    "lineage_timeline": {
+      "description": "Tree of generations",
+      "style": "Strict 90-degree orthogonal SVG lines (retro schematic style) connecting nodes. Nodes are square brackets around IDs, e.g., [GEN-001].",
+      "node_classes": "border border-[#00FFFF] text-[#00FFFF] px-2 py-1 text-xs hover:bg-[#00FFFF] hover:text-black cursor-pointer"
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/636cf0c9-3747-4fe3-afb8-129afa57e099/images/c0db249fd4d64d7fd58666081283eac7036df4bb9815c524ca5aeae282ffdf20.png",
+        "description": "Dark 1980s neo-noir computer terminal room, glowing green phosphor screens. Use as full-page background with opacity-10 or opacity-20 behind the CRT layout, or inside the hero header panel."
+      },
+      {
+        "category": "evolution_tree_accent",
+        "url": "https://static.prod-images.emergentagent.com/jobs/636cf0c9-3747-4fe3-afb8-129afa57e099/images/247849cd27700906181306fdbb6fddd880a7e347e1ba95e211a7d52dce62c799.png",
+        "description": "Abstract neural network evolution tree. Use this image as a subtle background layer inside the Lineage Timeline or Rater Scorecards section to add cybernetic texture."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "instructions": "Use sharp, angular icons if possible. Wrap icon components in a span with text-[#00FFFF] or text-[#FF00FF] to differentiate them from the green text. E.g. Terminal, Network, ShieldAlert, Zap."
+    }
+  },
+  "accessibility_and_testing": {
+    "data_testid_instructions": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='run-prompt-btn', data-testid='lineage-node-001').",
+    "contrast": "Ensure glowing text against the `#000000` background meets APCA contrast standards. Avoid using the muted green for interactive text."
+  },
+  "instructions_to_main_agent": [
+    "Build a single-page interactive dashboard combining the prompt console, pipeline visualization, artifact viewer, and lineage tree.",
+    "Implement the CRT effect container at the root layout level so the entire app looks like a retro monitor.",
+    "Use custom Tailwind keyframes for the blinking cursor (blink) and subtle screen flicker (flicker).",
+    "DO NOT USE INTER, ROBOTO, or standard rounded Shadcn UI cards. Strip Shadcn border-radiuses to `rounded-none`.",
+    "Rely heavily on ASCII brackets, pipes, and hyphens to decorate headers, e.g., '=== [ SYSTEM STATUS ] ==='."
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 10 — ACTUAL EXECUTION of Layer #7 'User Edit Diffing'. Ran 13 pytest cases against the public preview URL (13/13 passed) covering Chain.build_manifest/built_at exposure, check-edits upload path, dedup on identical re-upload, nested-folder path normalization, bad-zip/400/404/409 edge cases, and persisted GET /edit-diffs history. Also ran two Playwright frontend passes on the fixture chain in ChainViewer: check-edits-btn renders alongside open-push/download-chain, opens a native file chooser (hidden input accept='.zip'), zip upload produces a sonner toast 'found 1 corrected file(s)' and renders edit-diffs-panel with expandable edit-diff-index.html / edit-diff-README.md details showing the real unified diff containing the uploaded marker. Pricing page + landing regression smoke OK. Code inspection confirmed `if file is not None` is evaluated BEFORE `elif doc.get('github')` in server.py check_edits (priority-order fix present). No blocking issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChainViewer edit-diffs-panel", "issue": "Optimistically-merged diff entries added right after an upload lack seconds_since_build, so the '(Xm after build)' label is missing for the just-uploaded file until reload (server-fetched rows show it). Cosmetic only.", "selector": "[data-testid='edit-diff-index.html'] summary", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global (all views)", "issues": ["Repeated 401 console errors on load (Neon Auth token/me calls while anonymous) — functionally harmless but noisy; consider suppressing the request when no auth session cookie exists."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_edit_diffing.py",
+    "/app/test_reports/pytest/iteration10_results.xml"
+  ],
+  "action_items": [
+    "Optional (LOW): populate seconds_since_build (or omit label gracefully) on optimistic post-upload diff entries in ChainViewer.runCheckEdits.",
+    "Optional (LOW): skip Neon Auth token fetch when no session exists to remove the 401 console noise.",
+    "Cleanup: my 409 test invoked POST /api/evolve once ('TEST_IT10 a tiny hello page'), leaving one extra chain in the anonymous history for session selftest-edits-1787072853."
+  ],
+  "critical_code_review_comments": [
+    "edits.py _store_diff dedup compares only against the single most recent hunk for a file; A->B->A toggling still appends a duplicate row. Acceptable for an append-only history but worth noting for corrections_digest noise.",
+    "_normalize_upload_paths strips exactly one leading segment; a zip nested two levels deep (e.g. out/myproject/index.html) will still miss. Consider suffix matching against manifest keys if that pattern shows up.",
+    "check_edits enforces the 10MB limit both via Content-Length pre-check and post-read length — correct; note that a chunked upload without Content-Length still buffers the full body before rejection.",
+    "GET /edit-diffs caps at 50 rows with no pagination; append-only growth will eventually truncate older history."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration10_edit_diffing.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% of asserted flows"},
+  "seed_data_creation": "Reused pre-built fixture chain 6d9a44c9-9060-477a-9d54-cdae50125b24 (session selftest-edits-1787072853). Tests appended a few edit_diffs rows (index.html/README.md, source=upload) by design. One extra 'TEST_IT10' running chain created for the 409 check.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Anonymous X-Capcode-Session header only; /app/memory/test_credentials.md has no login creds needed for this round.",
+  "context_for_next_testing_agent": "Reusable pytest file: /app/backend/tests/test_iteration10_edit_diffing.py (regenerates modified zips from the chain's own generation content, so it is idempotent and rerunnable; dedup test compares edit-diffs row counts before/after). Frontend: seed localStorage 'capcode.session_id' = selftest-edits-1787072853 then click landing-start -> history-chain-6d9a44c9 to reach the fixture chain in ChainViewer. GitHub compare path (check_git_edits) remains UNTESTED — no PAT available.",
+  "rca_of_the_issue": "N/A — all previously flagged issues (priority order, path normalization, append-only + dedup, content-length pre-check, Chain response_model fields) verified fixed by execution."
+}

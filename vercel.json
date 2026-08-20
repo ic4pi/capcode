@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd frontend && yarn install --ignore-engines && yarn build",
+  "outputDirectory": "frontend/build",
+  "installCommand": "echo skip-root-install",
+  "framework": null,
+  "rewrites": [
+    { "source": "/neon-auth/:path*", "destination": "https://capcode-dun6.onrender.com/api/neon-auth/:path*" }
+  ]
+}
