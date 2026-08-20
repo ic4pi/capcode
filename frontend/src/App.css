@@ -1,0 +1,2 @@
+/* App-specific overrides live here. Most styling is in index.css + tailwind. */
+.App { min-height: 100vh; }

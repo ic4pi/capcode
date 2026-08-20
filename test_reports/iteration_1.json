@@ -1,0 +1,35 @@
+{
+  "summary": "Full backend + frontend testing of RECURSIVE.BBS (stub mode). 13/13 pytest backend tests pass covering root/status, builds CRUD, feedback (+/-0.25), leaderboard sort, lineage shape, self-improvement inheritance, and fork generation increment. Frontend loads cleanly, prompt submission produces a build with rater scorecard, ASCII progress bars, critic notes, meta_builder & app_spec JSON viewers. Feedback-up boosts score (toast '→ BOOSTED INTO GENE POOL'), fork-build triggers 'FORK FROM :: <id> ✕' chip in PromptConsole (via clear-parent-btn). Leaderboard rows and lineage nodes are clickable and load the selected build.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "BuildDetail / RaterScorecard", "issues": ["No data-testid on composite score number — minor; selector-only impact for automation."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_recursive_bbs.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: add data-testid=\"composite-score\" to the composite number element in BuildDetail to ease automated assertion.",
+    "Optional: add data-testid=\"parent-chip\" to the FORK FROM chip in PromptConsole (currently only clear-parent-btn is exposed)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: STUB_MODE check uses `reward.helpfulness == 0 and reward.correctness == 0` to decide stub fallback even when not in STUB_MODE — could mis-trigger if real rater legitimately returns zeros. Consider explicit success flag.",
+    "server.py: generation numbering for non-fork uses `(count % 999) + 1` which is not monotonic and can collide; consider max(generation)+1 or simple count+1.",
+    "server.py: _stub_generate uses Python built-in hash() which is salted per-process — same prompt gives different scores across restarts (note: behavior contradicts 'same prompt → same scores' claim). Use hashlib.md5 for stable seed.",
+    "server.py is ~470 lines; LLM helpers + endpoints could be split into modules but acceptable for current size."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_recursive_bbs.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "n/a — no auth in this app",
+  "seed_data_creation": "Tests insert TEST_ prefixed builds; not auto-cleaned (no delete endpoint).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Stub mode is active (no NVIDIA_API_KEY). All 13 pytest tests pass. Frontend data-testid coverage is strong except for composite-score and parent-chip nodes. Fork button uses fork-build (not fork-btn). Leaderboard rows use leaderboard-row-<id>, lineage nodes use lineage-node-<id>. The composite-score in DB is mutable via feedback; verified +/- 0.25 swing. hash() seeding is non-deterministic across process restarts — be aware when asserting score equality across server restarts.",
+  "rca of the issue": "n/a — no failures observed"
+}
