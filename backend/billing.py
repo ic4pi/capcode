@@ -47,6 +47,33 @@ def credits_to_usd(credits: float) -> float:
     return round(credits / CREDITS_PER_DOLLAR, 4)
 
 
+# ---------------------------------------------------------------------------
+# Credit top-ups — one-time Stripe purchases on top of the $16/mo subscription.
+# $8/500, $16/1000, $32/2000 — a persistent balance (doesn't expire on cycle
+# renewal like api_budget_credits/recursion_fund_credits do) that's spent
+# FIRST to cover any overage before a card would otherwise be billed.
+# ---------------------------------------------------------------------------
+TOPUP_PACKAGES = {
+    "8":  {"usd": 8.00,  "credits": 500,  "price_env": "STRIPE_PRICE_ID_CREDITS_8"},
+    "16": {"usd": 16.00, "credits": 1000, "price_env": "STRIPE_PRICE_ID_CREDITS_16"},
+    "32": {"usd": 32.00, "credits": 2000, "price_env": "STRIPE_PRICE_ID_CREDITS_32"},
+}
+
+
+async def get_topup_balance(db, user_id: str) -> int:
+    user_doc = await db.users.find_one({"user_id": user_id}) or {}
+    return int(user_doc.get("topup_credits_balance") or 0)
+
+
+async def add_topup_credits(db, user_id: str, credits: int) -> int:
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$inc": {"topup_credits_balance": int(credits)}},
+    )
+    logger.info("topup: credited %s credits to user %s", credits, user_id)
+    return await get_topup_balance(db, user_id)
+
+
 async def start_cycle(db, user_id: str) -> dict:
     """Called on (mock or real) subscription purchase — (re)opens a fresh
     30-day pool. Idempotent per call — resets balances, does not accumulate
@@ -106,6 +133,13 @@ async def apply_chain_billing(db, user_id: str, chain_id: str, refinement: dict)
     base_covered = min(base_credits, api_budget)
     fund_applied = min(loop_credits, fund)
     overage_credits = max(0, base_credits - api_budget) + max(0, loop_credits - fund)
+
+    # Spend the persistent top-up balance (if any) before billing the card.
+    topup_balance = await get_topup_balance(db, user_id)
+    topup_applied = min(overage_credits, topup_balance)
+    if topup_applied:
+        await db.users.update_one({"user_id": user_id}, {"$inc": {"topup_credits_balance": -topup_applied}})
+    overage_credits -= topup_applied
     user_billed = credits_to_usd(overage_credits)
 
     api_budget -= base_covered
@@ -126,6 +160,7 @@ async def apply_chain_billing(db, user_id: str, chain_id: str, refinement: dict)
         "billing_summary": {
             "sub_cost": SUB_PRICE_USD,
             "fund_applied": credits_to_usd(fund_applied),
+            "topup_credits_applied": topup_applied,
             "user_billed": user_billed,
             "net_profit": PROFIT_USD,
         },

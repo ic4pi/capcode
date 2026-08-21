@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
@@ -264,6 +265,10 @@ api = APIRouter(prefix="/api")
 # our backend. We verify the JWT against Neon Auth's JWKS (EdDSA / Ed25519).
 NEON_AUTH_URL = os.environ["NEON_AUTH_URL"].rstrip("/")
 NEON_JWKS_URL = f"{NEON_AUTH_URL}/.well-known/jwks.json"
+# Neon signs `aud`/`iss` as the bare origin (scheme://host), NOT the full
+# `.../neondb/auth` path — confirmed by decoding a real token. Must match
+# exactly or PyJWT's audience check always fails.
+_NEON_AUTH_ORIGIN = "{0.scheme}://{0.netloc}".format(urlparse(NEON_AUTH_URL))
 
 import jwt as _pyjwt  # PyJWT
 from jwt import PyJWKClient
@@ -332,11 +337,16 @@ def _verify_neon_jwt(token: str) -> Optional[dict]:
     """Verify a Neon Better Auth JWT and return the claims dict, or None on failure."""
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(token)
-        # Neon Managed Better Auth signs with EdDSA (Ed25519).
+        # Neon Managed Better Auth signs with EdDSA (Ed25519) and always sets
+        # `aud` to the Neon Auth base URL. PyJWT raises InvalidAudienceError
+        # if a token has an `aud` claim but no `audience` is passed to
+        # decode() — so this must always be supplied, or every real Neon
+        # token fails verification (silently logging every user back out).
         claims = _pyjwt.decode(
             token,
             signing_key.key,
             algorithms=["EdDSA"],
+            audience=_NEON_AUTH_ORIGIN,
             options={"require": ["sub", "exp"]},
         )
         return claims
@@ -446,6 +456,62 @@ async def billing_status(request: Request):
     return {"subscribed": bool(cycle), "cycle": cycle}
 
 
+@api.get("/profile")
+async def get_profile(request: Request):
+    """Aggregated profile info for the Profile UI — email, subscription
+    status, credits left (subscription cycle + persistent top-up balance)."""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(401, "sign in required")
+    user_doc = await db.users.find_one({"user_id": user.user_id}) or {}
+    tier = user_doc.get("tier", "free")
+    cycle = await _billing.get_cycle(db, user.user_id)
+    topup_balance = await _billing.get_topup_balance(db, user.user_id)
+    trial_days_remaining = None
+    if tier == "trial" and user_doc.get("trial_started_at"):
+        started = datetime.fromisoformat(user_doc["trial_started_at"])
+        elapsed = (datetime.now(timezone.utc) - started).days
+        trial_days_remaining = max(0, 7 - elapsed)
+    return {
+        "email": user.email,
+        "name": user.name,
+        "picture": user.picture,
+        "tier": tier,
+        "billing_interval": user_doc.get("billing_interval"),
+        "trial_days_remaining": trial_days_remaining,
+        "subscribed": bool(cycle),
+        "cycle": cycle,
+        "topup_credits_balance": topup_balance,
+    }
+
+
+@api.get("/teams/defaults")
+async def team_defaults():
+    """Public — the 3 preset 6-role LLM teams (Venice/OpenRouter/NVIDIA)
+    surfaced in Settings as one-click 'reset to default team' options."""
+    return _providers.DEFAULT_TEAMS
+
+
+class TeamResetRequest(BaseModel):
+    team: str
+    session_id: str
+
+
+@api.post("/teams/reset")
+async def reset_team(req: TeamResetRequest):
+    """Overwrites all 6 role assignments in this session's settings with one
+    of the preset teams (venice/openrouter/nvidia)."""
+    team = _providers.DEFAULT_TEAMS.get(req.team)
+    if not team:
+        raise HTTPException(400, f"unknown team '{req.team}' — must be one of {list(_providers.DEFAULT_TEAMS)}")
+    await db.settings.update_one(
+        {"session_id": req.session_id},
+        {"$set": {"session_id": req.session_id, **team["assignments"]}},
+        upsert=True,
+    )
+    return await get_settings(req.session_id)
+
+
 @api.get("/providers/models")
 async def catalog(refresh: bool = False):
     """Aggregated model catalog across all providers."""
@@ -453,10 +519,16 @@ async def catalog(refresh: bool = False):
             "defaults": _providers.DEFAULT_ASSIGNMENTS}
 
 
+SETTINGS_ROLES = ("teacher", "architect", "artist", "reviewer", "rater", "corrector")
+
+
 class SettingsPayload(BaseModel):
     teacher: Optional[dict] = None
+    architect: Optional[dict] = None
     artist: Optional[dict] = None
+    reviewer: Optional[dict] = None
     rater: Optional[dict] = None
+    corrector: Optional[dict] = None
     keys: Optional[dict] = None  # {openrouter?, venice?, nvidia?}
     github: Optional[dict] = None  # {token?, username?}
 
@@ -464,7 +536,7 @@ class SettingsPayload(BaseModel):
 @api.get("/settings")
 async def get_settings(session_id: str):
     doc = await db.settings.find_one({"session_id": session_id}, {"_id": 0}) or {}
-    roles = ("teacher", "artist", "rater")
+    roles = SETTINGS_ROLES
     # Never leak the actual secret values back to the frontend — just say whether
     # each key is set. Model choices are safe to echo.
     keys = doc.get("keys") or {}
@@ -481,9 +553,10 @@ async def get_settings(session_id: str):
 @api.post("/settings")
 async def save_settings(session_id: str, payload: SettingsPayload):
     update = {}
-    if payload.teacher is not None: update["teacher"] = payload.teacher
-    if payload.artist is not None:  update["artist"] = payload.artist
-    if payload.rater is not None:   update["rater"] = payload.rater
+    for r in SETTINGS_ROLES:
+        v = getattr(payload, r)
+        if v is not None:
+            update[r] = v
     if payload.keys is not None:
         # Merge with existing keys — empty string means "clear this key".
         existing = (await db.settings.find_one({"session_id": session_id}, {"_id": 0, "keys": 1}) or {}).get("keys") or {}
@@ -1364,7 +1437,20 @@ app.include_router(_tiers.router)
 # platform's own preview domains + localhost dev only; any real deployment
 # MUST set CORS_ORIGINS explicitly or cross-origin requests are rejected.
 _cors_env = (os.environ.get("CORS_ORIGINS") or "").strip()
-if _cors_env and _cors_env != "*":
+if _cors_env == "*":
+    # Explicit wildcard: reflect whatever Origin the browser sends. A literal
+    # "*" cannot be combined with allow_credentials per browser spec, so this
+    # is the only way "*" can mean what it looks like it means — previously
+    # it silently fell through to the Emergent-only fallback below instead,
+    # which is NOT what a deployer setting CORS_ORIGINS=* would expect.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origin_regex=r".*",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+elif _cors_env:
     app.add_middleware(
         CORSMiddleware,
         allow_credentials=True,

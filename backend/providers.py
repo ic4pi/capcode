@@ -80,8 +80,10 @@ def provider_key(name: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Groq key rotation pools
 # ---------------------------------------------------------------------------
-# Free-tier pool: GROQ_API_KEY_1, GROQ_API_KEY_2, ... (set as many as you have
-# in Vercel env vars). Trial-tier pool: GROQ_TRIAL_KEY_1, GROQ_TRIAL_KEY_2, ...
+# Free-tier pool: GROQ_API_KEY_1, GROQ_API_KEY_2, ... Trial-tier pool:
+# GROQ_TRIAL_KEY_1, GROQ_TRIAL_KEY_2, ... Set these on the BACKEND service
+# (Render) — this module only runs server-side and never sees Vercel's env
+# vars, which only apply to the static frontend build.
 # Kept as SEPARATE pools so trial traffic can never starve free-tier capacity.
 _groq_pool_idx = {"free": 0, "trial": 0}
 
@@ -401,6 +403,40 @@ TRIAL_FALLBACKS = {
     "reviewer":  ("nvidia", "z-ai/glm-5.2"),
     "rater":     ("nvidia", "z-ai/glm-5.2"),
     "corrector": ("nvidia", "z-ai/glm-5.2"),
+}
+
+
+# ---------------------------------------------------------------------------
+# Default LLM Teams — 3 one-click presets covering all 6 roles, surfaced in
+# Settings as "reset to default team" buttons.
+# ---------------------------------------------------------------------------
+DEFAULT_TEAMS = {
+    "venice": {
+        "label": "Venice — Uncensored",
+        "description": "All 6 roles routed through Venice's uncensored models. Requires the uncensored-mode waiver.",
+        "uncensored": True,
+        "assignments": {
+            "teacher":   {"provider": "venice", "model": "venice-uncensored"},
+            "architect": {"provider": "venice", "model": "qwen3-coder-480b-a35b-instruct-turbo"},
+            "artist":    {"provider": "venice", "model": "qwen3-coder-480b-a35b-instruct-turbo"},
+            "reviewer":  {"provider": "venice", "model": "venice-uncensored"},
+            "rater":     {"provider": "venice", "model": "venice-uncensored"},
+            "corrector": {"provider": "venice", "model": "qwen3-coder-480b-a35b-instruct-turbo"},
+        },
+    },
+    "openrouter": {
+        "label": "OpenRouter — Best Models",
+        "description": "All 6 roles routed through OpenRouter's strongest models, one per role.",
+        "uncensored": False,
+        "assignments": {r: DEFAULT_ASSIGNMENTS[r] for r in
+                         ("teacher", "architect", "artist", "reviewer", "rater", "corrector")},
+    },
+    "nvidia": {
+        "label": "NVIDIA NIM — Trial Team",
+        "description": "All 6 roles pinned to NVIDIA NIM models — the same team the 7-day trial uses.",
+        "uncensored": False,
+        "assignments": dict(TIER_ASSIGNMENTS["trial"]),
+    },
 }
 
 

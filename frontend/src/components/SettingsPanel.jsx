@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { toast } from "sonner";
 import { api, API } from "@/lib/api";
 import { Search, Save, RefreshCw, X, Zap, DollarSign } from "lucide-react";
 import { VeniceConsentModal } from "@/components/VeniceConsentModal";
 
 const ROLES = [
-  { key: "teacher", label: "TEACHER", desc: "rigid, strict; writes the Artist's brief from your target" },
-  { key: "artist",  label: "ARTIST",  desc: "creative, novel; designs the actual product" },
-  { key: "rater",   label: "RATER",   desc: "scores the finished product on 5 dimensions" },
+  { key: "teacher",   label: "TEACHER",   desc: "rigid, strict; writes the Artist's brief from your target" },
+  { key: "architect", label: "ARCHITECT", desc: "plans structure/stack before the Artist builds" },
+  { key: "artist",    label: "ARTIST",    desc: "creative, novel; designs the actual product" },
+  { key: "reviewer",  label: "REVIEWER",  desc: "critiques the Artist's output before scoring" },
+  { key: "rater",     label: "RATER",     desc: "scores the finished product on 5 dimensions" },
+  { key: "corrector", label: "CORRECTOR", desc: "fixes issues the Reviewer/Rater flagged" },
 ];
 
 const PriceBadge = ({ tier }) => {
@@ -39,6 +43,9 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [billing, setBilling] = useState(null);
   const [checkingOut, setCheckingOut] = useState(false);
+  const [defaultTeams, setDefaultTeams] = useState({});
+  const [pendingTeam, setPendingTeam] = useState(null);
+  const [applyingTeam, setApplyingTeam] = useState(null);
 
   const loadBilling = async () => {
     if (!user) { setBilling(null); return; }
@@ -62,16 +69,17 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: cat }, { data: s }] = await Promise.all([
+      const [{ data: cat }, { data: s }, teams] = await Promise.all([
         axios.get(`${API}/providers/models`),
         axios.get(`${API}/settings`, { params: { session_id: sessionId } }),
+        api.getDefaultTeams().catch(() => ({})),
       ]);
       setCatalog(cat.models || []);
       setDefaults(cat.defaults || {});
+      setDefaultTeams(teams || {});
       setSettings({
-        teacher: s.teacher,
-        artist: s.artist,
-        rater: s.rater,
+        teacher: s.teacher, architect: s.architect, artist: s.artist,
+        reviewer: s.reviewer, rater: s.rater, corrector: s.corrector,
         keys: { openrouter: "", venice: "", nvidia: "" },
         keys_set: s.keys_set || {},
         github: { username: s.github?.username || "", token: "" },
@@ -110,9 +118,8 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
     setSaving(true);
     try {
       const payload = {
-        teacher: settings.teacher,
-        artist: settings.artist,
-        rater: settings.rater,
+        teacher: settings.teacher, architect: settings.architect, artist: settings.artist,
+        reviewer: settings.reviewer, rater: settings.rater, corrector: settings.corrector,
       };
       // Only send non-empty keys; empty string clears a saved key.
       const outKeys = {};
@@ -139,6 +146,32 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
 
   if (!open) return null;
 
+  const applyTeam = async (teamId) => {
+    setApplyingTeam(teamId);
+    try {
+      const s = await api.resetTeam(teamId, sessionId);
+      setSettings((prev) => ({
+        ...prev,
+        teacher: s.teacher, architect: s.architect, artist: s.artist,
+        reviewer: s.reviewer, rater: s.rater, corrector: s.corrector,
+      }));
+      toast.success(`${defaultTeams[teamId]?.label || teamId} team applied`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "couldn't apply team");
+    } finally {
+      setApplyingTeam(null);
+    }
+  };
+
+  const handleTeamClick = (teamId, team) => {
+    if (team.uncensored) {
+      setPendingTeam(teamId);
+      setConsentOpen(true);
+    } else {
+      applyTeam(teamId);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[100] bg-black/85 flex items-start justify-center p-2 sm:p-6"
@@ -150,7 +183,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         style={{ borderColor: "rgba(0,255,255,0.5)" }}
       >
         {/* header */}
-        <div className="flex items-center justify-between border-b border-phosphor/30 p-4">
+        <div className="shrink-0 flex items-center justify-between border-b border-phosphor/30 p-4">
           <div>
             <div className="label-xs text-neon_cyan neon-cyan">
               [ CAPCODE :: MODEL SETTINGS ]
@@ -172,7 +205,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         </div>
 
         {/* $16/mo credit subscription */}
-        <div className="border-b border-phosphor/30 p-4" data-testid="billing-section">
+        <div className="shrink-0 border-b border-phosphor/30 p-4" data-testid="billing-section">
           {!user ? (
             <div className="label-xs text-phosphor3">sign in with google to subscribe for credits</div>
           ) : billing?.subscribed ? (
@@ -206,8 +239,30 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
           )}
         </div>
 
+        {/* Default LLM teams — one-click reset for all 6 roles */}
+        <div className="shrink-0 border-b border-phosphor/30 p-4 space-y-2" data-testid="default-teams-section">
+          <div className="label-xs text-neon_cyan neon-cyan">[ DEFAULT TEAMS :: RESET ALL 6 ROLES ]</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {Object.entries(defaultTeams).map(([id, team]) => (
+              <button
+                key={id}
+                data-testid={`team-reset-${id}`}
+                onClick={() => handleTeamClick(id, team)}
+                disabled={applyingTeam === id}
+                className="border border-phosphor/40 text-left p-2 hover:border-neon_cyan transition-colors disabled:opacity-50"
+              >
+                <div className="label-xs text-phosphor">
+                  {applyingTeam === id ? "applying…" : team.label}
+                  {team.uncensored && <span className="ml-1 text-neon_magenta neon-magenta">UNCEN</span>}
+                </div>
+                <div className="text-[10px] text-phosphor3 mt-1">{team.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* role tabs */}
-        <div className="flex border-b border-phosphor/30 overflow-x-auto">
+        <div className="shrink-0 flex border-b border-phosphor/30 overflow-x-auto">
           {ROLES.map((r) => {
             const current = settings[r.key] || {};
             const isDefault =
@@ -237,7 +292,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         </div>
 
         {/* filters */}
-        <div className="p-4 border-b border-phosphor/20 space-y-3">
+        <div className="shrink-0 p-4 border-b border-phosphor/20 space-y-3">
           <div className="relative">
             <Search size={14} className="absolute left-2 top-2.5 text-phosphor3" />
             <input
@@ -290,7 +345,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
 
         {/* model list */}
         <div
-          className="overflow-y-auto flex-1 p-2"
+          className="overflow-y-auto flex-1 min-h-0 p-2"
           data-testid="model-list"
         >
           {loading && (
@@ -344,7 +399,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         </div>
 
         {/* BYOK + GitHub */}
-        <div className="border-t border-phosphor/30 p-4 space-y-3 max-h-72 overflow-y-auto"
+        <div className="shrink-0 border-t border-phosphor/30 p-4 space-y-3 max-h-72 overflow-y-auto"
              data-testid="keys-section">
           <div className="label-xs text-neon_cyan neon-cyan">
             [ YOUR KEYS :: BYOK ]
@@ -414,7 +469,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         </div>
 
         {/* footer */}
-        <div className="flex items-center justify-between border-t border-phosphor/30 p-4 gap-2">
+        <div className="shrink-0 flex items-center justify-between border-t border-phosphor/30 p-4 gap-2">
           <div className="text-phosphor3 label-xs">
             {activeRole.toUpperCase()} :: {settings[activeRole]?.provider || "—"} /{" "}
             {settings[activeRole]?.model || "—"}
@@ -423,11 +478,11 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
             <button
               data-testid="settings-reset"
               onClick={() =>
-                setSettings({
-                  teacher: defaults?.teacher,
-                  artist: defaults?.artist,
-                  rater: defaults?.rater,
-                })
+                setSettings((s) => ({
+                  ...s,
+                  teacher: defaults?.teacher, architect: defaults?.architect, artist: defaults?.artist,
+                  reviewer: defaults?.reviewer, rater: defaults?.rater, corrector: defaults?.corrector,
+                }))
               }
               className="border border-phosphor/40 text-phosphor2 px-3 py-2 text-xs label-xs hover:bg-phosphor hover:text-black"
             >
@@ -450,8 +505,14 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         onAgree={async () => {
           try {
             await api.veniceConsent(null);
-            setUncensoredOnly(true);
             setConsentOpen(false);
+            if (pendingTeam) {
+              const t = pendingTeam;
+              setPendingTeam(null);
+              await applyTeam(t);
+            } else {
+              setUncensoredOnly(true);
+            }
           } catch (e) {
             // Bubble the error up to the modal's own error UI.
             throw e;
@@ -459,6 +520,7 @@ export const SettingsPanel = ({ sessionId, user, open, onClose, onSaved }) => {
         }}
         onCancel={() => {
           setConsentOpen(false);
+          setPendingTeam(null);
           // Toggle stays OFF — the checkbox's `checked` prop is bound to
           // `uncensoredOnly` which we never touched, so the UI reflects "off".
         }}

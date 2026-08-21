@@ -209,6 +209,61 @@ def _stripe():
     return stripe
 
 
+@router.get("/topup/packages")
+async def topup_packages():
+    """Public — credit top-up package catalog for the Profile UI."""
+    return _billing.TOPUP_PACKAGES
+
+
+@router.post("/topup/checkout")
+async def topup_checkout(request: Request):
+    """Body: {"package": "8" | "16" | "32"}. One-time Stripe charge that
+    credits the user's persistent top-up balance (see billing.TOPUP_PACKAGES /
+    billing.add_topup_credits)."""
+    user_id = await _require_signed_in(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    package = str((body or {}).get("package", ""))
+    pkg = _billing.TOPUP_PACKAGES.get(package)
+    if not pkg:
+        raise HTTPException(400, f"package must be one of {list(_billing.TOPUP_PACKAGES)}")
+
+    key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+    if not key:
+        if os.environ.get("ALLOW_MOCK_BILLING", "").strip().lower() != "true":
+            raise HTTPException(503, "Billing is not configured yet — try again later.")
+        new_balance = await _billing.add_topup_credits(_db, user_id, pkg["credits"])
+        return {"checkout_url": None, "mock": True, "credits_added": pkg["credits"],
+                "topup_credits_balance": new_balance}
+
+    stripe = _stripe()
+    price_id = os.environ.get(pkg["price_env"], "").strip()
+    if not price_id:
+        raise HTTPException(500, f"{pkg['price_env']} not configured")
+
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    if not frontend_url:
+        raise HTTPException(500, "FRONTEND_URL not configured — needed for Stripe redirect URLs")
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{"price": price_id, "quantity": 1}],
+            client_reference_id=user_id,
+            metadata={"type": "credit_topup", "package": package,
+                      "credits": str(pkg["credits"]), "user_id": user_id},
+            success_url=f"{frontend_url}/settings?topup=1",
+            cancel_url=f"{frontend_url}/settings?topup_cancelled=1",
+        )
+    except Exception as exc:
+        logger.error("stripe topup checkout session creation failed: %s", exc)
+        raise HTTPException(502, f"stripe error: {exc}")
+
+    return {"checkout_url": session.url, "mock": False}
+
+
 @router.post("/checkout")
 async def create_checkout_session(request: Request):
     """Body: {"plan": "paid" | "paid_annual" | "trial"} — defaults to "paid"
@@ -302,8 +357,14 @@ async def stripe_webhook(request: Request):
 
     if etype == "checkout.session.completed":
         user_id = obj.get("client_reference_id")
-        plan = (obj.get("metadata") or {}).get("plan", "paid")
-        if user_id and plan == "trial":
+        meta = obj.get("metadata") or {}
+        plan = meta.get("plan", "paid")
+        if user_id and meta.get("type") == "credit_topup":
+            credits = int(meta.get("credits") or 0)
+            if credits:
+                await _billing.add_topup_credits(_db, user_id, credits)
+                logger.info("user %s topped up %s credits via stripe checkout", user_id, credits)
+        elif user_id and plan == "trial":
             await _grant_trial(user_id)
             logger.info("user %s started NVIDIA-only trial via $2.99 stripe checkout", user_id)
         elif user_id:

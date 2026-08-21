@@ -1,0 +1,42 @@
+{
+  "summary": "Frontend-only testing of the NEW Pricing page + navigation wiring, plus regression of the core build pipeline, chain history, verify/download/push. ALL 9 pricing/nav test cases PASS (landing nav link, inline 'See plans', pricing-back, free CTA -> build, trial CTA text 'Sign in to start trial' + real Google OAuth redirect, paid CTA text 'Sign in to upgrade' + Google OAuth redirect, build-view 'pricing' link, signed-out settings billing-section unchanged, capcode:open-pricing CustomEvent listener). Core build regression: pipeline is NOT broken by App.js edits, but the DEFAULT anonymous free-tier build FAILS in this preview env because GROQ_API_KEY is not configured (default teacher/artist/rater assignments = groq, and free tier deliberately disables provider fallback). After pointing a test session's model settings at OpenRouter, the full checkpointed pipeline completed (TEACHER->ARTIST->EXECUTE->CORRECT->RATE->SCORE + refinement loop), gen card rendered, verify/download/push-dialog and chain history all work.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/chains/{id}/advance (artist stage)", "issue": "With default assignments (provider=groq) and no GROQ_API_KEY in backend/.env, _chat() returns None instantly (free tier suppresses fallback) => 3 artist attempts with raw_len=0 => 422 'Artist produced no usable files after 3 attempts. Last response was 0 chars - likely truncated or model refused'. Every default anonymous free build fails. Backend log: 'ARTIST attempt=0/1/2 raw_len=0 keys=[] files=0' all in the same second. Either configure GROQ_API_KEY(s) or return an explicit 'provider not configured' error / allow fallback when the tier's provider has no key.", "priority": "CRITICAL"},
+      {"endpoint": "chain_generator.teacher_step", "issue": "When the LLM call returns None (missing key/provider error), teacher_step silently applies placeholder defaults (name='TeacherSpec-...', stack='python-fastapi') and the pipeline reports 'Teacher reviewed your request and designed a build spec' - masking a total provider failure with a fake success report. Should raise/propagate a provider error.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "advance report text", "issue": "Contradictory stage reports: 'EXECUTE :: Build failed to start (exit code -15)' immediately followed by 'CORRECT :: No correction needed - build was already working.' Also a pure single-file HTML build gets exit code -15 (SIGTERM/timeout) from the executor and a CRITIC line 'Ran: False. Port listening: False', dragging the score to 56/100."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Build failure -> prior builds list", "issue": "handleEvolve() only calls refresh() on the success path; after a failed build the 'Prior builds' history is not refreshed, so the just-failed chain does not appear until a manual reload.", "affected_selectors": ["[data-testid=\"chain-history\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Pricing page", "issues": ["Visually consistent with landing (dark theme, pink/canary), 3 cards + badges render correctly at 1920px and 390px mobile - no contrast/spacing problems found", "Minor UX: 'capcode' back button (pricing-back) always returns to the LANDING page even when Pricing was opened from inside the build view or from Settings, so the user is dropped out of the app instead of back where they came from"]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_8.json"],
+  "action_items": [
+    "Configure GROQ_API_KEY (or GROQ_API_KEY_1..N) in backend/.env, OR make _call_role surface a clear 'provider X not configured' error and/or permit fallback when the free-tier provider has no key - currently 100% of default anonymous builds fail with a misleading 'model refused' message",
+    "Make teacher_step (and other steps) fail loudly instead of silently substituting placeholder specs when the provider returns None",
+    "Call refresh() in the catch branch of handleEvolve so failed builds show up in chain history",
+    "Optional: make pricing-back return to the previous view (build) instead of always landing",
+    "Fix contradictory EXECUTE/CORRECT report wording for failed-to-start builds"
+  ],
+  "critical_code_review_comments": [
+    "chain_generator._chat returns None on any provider error when no fallback is configured; callers cannot distinguish 'no key' from 'model refused' - wrap in a typed ProviderUnavailableError",
+    "PricingPage handleTrial/handleUpgrade correctly gate on !user and call onSignIn - no unauthenticated API call is made, verified by network behaviour (redirect to accounts.google.com, no 401 toast)",
+    "App.js window CustomEvent listener for 'capcode:open-pricing' is registered once with proper cleanup - verified working by dispatching the event manually"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (backend not in scope; observed 422 on advance due to missing GROQ key)", "frontend": "100% of pricing/nav cases (9/9); build regression passes only with a non-default provider configured"},
+  "seed_data_creation": "Created anonymous test session 'qa-t1-1787041098' with model settings teacher/artist=openrouter/openai/gpt-4o-mini, rater=openrouter/openai/gpt-3.5-turbo, and one verified chain 6e7d265c-... ('a single-file html page with a button that shows current time')",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "/app/memory/test_credentials.md - anonymous session only; no signed-in credentials exist (Neon Better Auth, no backdoor). Signed-in-only paths (settings-see-plans link, actual trial start / Stripe checkout) were code-reviewed only, not executed.",
+  "context_for_next_testing_agent": "New Pricing page and all nav wiring verified working end-to-end in the preview env (data-testids: pricing-page, pricing-back, plan-free/trial/paid + -cta, landing-pricing-link, landing-pricing-inline-link, build-pricing-link). The blocking issue for build-flow testing is that backend/.env has NO GROQ_API_KEY while default assignments use groq and free tier disables fallback - to exercise the pipeline, POST /api/settings?session_id=<sid> with openrouter models (see seed_data_creation) and set localStorage 'capcode.session_id' to that sid before loading the app. Full pipeline then takes ~90s including the refinement loop.",
+  "rca_of_the_issue": "Free-tier default role assignments in providers.DEFAULT_ASSIGNMENTS point teacher/artist/rater at provider 'groq'. providers.provider_key('groq') reads GROQ_API_KEY which is absent from /app/backend/.env (only NVIDIA/OPENROUTER/VENICE keys present). _client_for('groq') therefore returns None; _call_role with tier='free' passes fallback=None, so _chat returns None immediately. Teacher masks this with defaults; Artist raises ArtistFailedError -> advance returns 422 and the chain is marked failed with a misleading 'model refused' message. Reproduce: open app with a fresh session, Start building, submit any prompt -> BUILD FAILED within ~10s (backend log shows three ARTIST attempts with raw_len=0 in the same second)."
+}

@@ -72,4 +72,10 @@ export const api = {
   getEditDiffs: (chainId) => axios.get(`${API}/chains/${chainId}/edit-diffs`).then((r) => r.data),
   // ---- Evaluation-criteria meta-loop (#5) ----
   getEvalWeights: () => axios.get(`${API}/eval-weights`).then((r) => r.data),
+  // ---- Profile + default LLM teams + credit top-ups ----
+  getProfile: () => axios.get(`${API}/profile`).then((r) => r.data),
+  getDefaultTeams: () => axios.get(`${API}/teams/defaults`).then((r) => r.data),
+  resetTeam: (team, session_id) => axios.post(`${API}/teams/reset`, { team, session_id }).then((r) => r.data),
+  topupPackages: () => axios.get(`${API}/tier/topup/packages`).then((r) => r.data),
+  topupCheckout: (pkg) => axios.post(`${API}/tier/topup/checkout`, { package: pkg }).then((r) => r.data),
 };

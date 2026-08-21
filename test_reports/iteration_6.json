@@ -1,0 +1,34 @@
+{
+  "summary": "Retested both iteration_5 defects — BOTH CLOSED. (1) POST /api/chains/{id}/workspace/{gen} is now owner-filtered: owner gets 200 with workspace_path+files, a different X-Capcode-Session gets 404 'chain not found', no-identity gets 404, and a filesystem mtime/inode snapshot of /workspaces/<chain[:8]> proved the intruder wrote nothing. (2) Rater now returns real differentiated non-zero scores: 6 fresh builds across 2 runs all produced 5 numeric dims in 0-4 with composite 3.37-3.63 (never -0.1 or 0.0), exec.started=True. Full regression matrix re-run: 46/46 in test_ownership.py + test_security_fixes.py + test_auth.py pass (including the previously-failing test_workspace_endpoint_owner_scoped guard), and 4/4 e2e webgl build tests pass (SSE deltas, canvas/WebGL html, zip download). Startup log confirms 'rater validation ok: openrouter/openai/gpt-3.5-turbo'. No new regressions found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "rate_step / SYSTEM_RATER", "issue": "Degeneracy check only rejects an all-zero payload. SYSTEM_RATER still embeds a concrete example ({helpfulness:2.7,correctness:3.2,coherence:2.5,complexity:1.9,verbosity:2.1}); a weak model that parrots THAT example would now pass validation silently (composite 2.66). Consider also flagging exact-example matches or all-identical values."},
+      {"endpoint": "GET /api/status", "issue": "Deferred per request: 'CHAINS :: 29' badge is still a global cross-tenant count."},
+      {"endpoint": "POST /api/evolve", "issue": "Deferred per request: model assignments/BYOK still resolved from body session_id only on the authenticated path."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_fixes.py",
+    "/app/backend/tests/test_ownership.py",
+    "/app/backend/tests/test_e2e_regression.py",
+    "/app/test_reports/pytest/it6_fixes.xml",
+    "/app/test_reports/pytest/it6_ownership.xml",
+    "/app/test_reports/pytest/it6_e2e.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "chain_generator.rate_step: clamping happens after the all-zero check, so a payload of e.g. {-1,-1,-1,-1,-1} would clamp to all-zero AFTER the degeneracy test and yield composite -0.1 again; move the clamp before the all-zero check.",
+    "server.py open_in_vscode now matches the other 9 endpoints (_owner_from_request + _owner_filter) — pattern is consistent; consider extracting the repeated 4-line 'load owned chain or 404' block into a dependency to prevent this class of miss recurring.",
+    "server.py is still >1000 lines — split routers (chains/auth/settings/github)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration6_fixes.py (new)"],
+  "success_rate": {"backend": "100% (60/60: 10 iteration-6 fix tests, 46 ownership/security/auth regression, 4 e2e)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Anonymous owners TEST_it6_ownerA/B with 3 real builds each run + seeded user_TESTAUTH/MY_TEST_TOKEN via fixtures; all TEST_* chains/users/sessions deleted afterwards (verified 0 remaining).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Anonymous: any UUID in X-Capcode-Session or ?session_id. Signed-in: seeded user_TESTAUTH / MY_TEST_TOKEN (fixtures create+delete).",
+  "context_for_next_testing_agent": "Do NOT run test_security_fixes.py in parallel with build-based suites — its orphan-sweep test restarts the backend and every concurrent request 502s (that caused one false-negative run here). Run `pytest tests/test_iteration6_fixes.py -p no:randomly -s` alone; it starts 3 concurrent live builds (~60s) and asserts rewards non-zero + composite>0.5 + workspace ownership with a /workspaces mtime snapshot. Observed rewards: 3.37/3.6/3.45/3.52/3.4/3.63 composite. Frontend untested this iteration.",
+  "rca_of_the_issue": "Fix verification only: workspace leak closed by adding request: Request + _owner_filter at server.py:707; rater zeros closed by removing the zero-filled example from SYSTEM_RATER and rejecting all-zero payloads in rate_step (deterministic 2.8/1.2 fallback). Neither fallback path was exercised in this run because the primary rater returned valid scores every time."
+}
