@@ -57,9 +57,16 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const cookies = typeof upstream.headers.getSetCookie === 'function'
+    const cookies = (typeof upstream.headers.getSetCookie === 'function'
       ? upstream.headers.getSetCookie()
-      : (upstream.headers.get('set-cookie') ? [upstream.headers.get('set-cookie')] : []);
+      : (upstream.headers.get('set-cookie') ? [upstream.headers.get('set-cookie')] : []))
+      // Neon's auth server sets Domain= for its own host (*.neon.tech). If we
+      // forward that verbatim, the browser is now on *this* app's domain and
+      // silently REJECTS the cookie for a domain mismatch -- no error, it
+      // just never sticks. Strip it so the cookie defaults to the domain
+      // that's actually setting it (this app), which is the whole point of
+      // proxying through here instead of hitting Neon directly.
+      .map((c) => c.replace(/;\s*Domain=[^;]*/gi, ''));
     if (cookies.length) res.setHeader('set-cookie', cookies);
 
     upstream.headers.forEach((value, key) => {
