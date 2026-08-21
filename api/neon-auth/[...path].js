@@ -69,6 +69,16 @@ module.exports = async (req, res) => {
       .map((c) => c.replace(/;\s*Domain=[^;]*/gi, ''));
     if (cookies.length) res.setHeader('set-cookie', cookies);
 
+    // TEMP DIAGNOSTIC: the better-auth client reads the session JWT from a
+    // `set-auth-jwt` response header, not the cookie or JSON body -- confirm
+    // Neon is actually sending it (and that nothing strips it) before
+    // chasing the wrong layer any further. Remove once sign-in is confirmed
+    // working end to end.
+    console.log(`[neon-auth proxy] ${req.method} ${path} -> ${upstream.status} | ` +
+      `set-auth-jwt=${upstream.headers.get('set-auth-jwt') ? 'present' : 'MISSING'} | ` +
+      `set-cookie count=${cookies.length} | ` +
+      `all headers=${JSON.stringify([...upstream.headers.keys()])}`);
+
     upstream.headers.forEach((value, key) => {
       const lk = key.toLowerCase();
       if (['content-length', 'content-encoding', 'transfer-encoding', 'connection', 'set-cookie'].includes(lk)) return;
