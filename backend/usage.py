@@ -82,6 +82,8 @@ _FREE_POOL = _load_key_pool("GROQ_API_KEY")
 _TRIAL_POOL = _load_key_pool("GROQ_TRIAL_KEY")
 _free_cycle = itertools.cycle(_FREE_POOL) if _FREE_POOL else None
 _trial_cycle = itertools.cycle(_TRIAL_POOL) if _TRIAL_POOL else None
+print(f"[usage.py] groq key pools loaded: free={len(_FREE_POOL)} trial={len(_TRIAL_POOL)} "
+      f"(restart the process after adding/changing Render env vars — pools are read once at import)", flush=True)
 
 
 def next_groq_key(tier: str) -> Optional[str]:

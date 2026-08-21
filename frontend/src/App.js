@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "@/App.css";
 import { Toaster, toast } from "sonner";
-import { LogIn, LogOut, Settings } from "lucide-react";
+import { LogIn, LogOut, Settings, User } from "lucide-react";
 import { api, API } from "@/lib/api";
 import { signInWithGoogle, signOut as neonSignOut, getJwt, getSession } from "@/lib/authClient";
 import { TerminalHero } from "@/components/TerminalHero";
 import { EvolveButton } from "@/components/EvolveButton";
 import { ChainViewer } from "@/components/ChainViewer";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { ProfilePanel } from "@/components/ProfilePanel";
 import { LandingPage } from "@/components/LandingPage";
 import { PricingPage } from "@/components/PricingPage";
+import { LegalPage } from "@/components/LegalPage";
 import { AmbientBackground } from "@/components/AmbientBackground";
 
 function getSessionId() {
@@ -32,6 +34,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [assignments, setAssignments] = useState(null);
   const [historyFilter, setHistoryFilter] = useState("all"); // "all" | "verified"
   const [streamBuf, setStreamBuf] = useState({ teacher: "", artist: "" });
@@ -39,10 +42,12 @@ function App() {
   const esRef = useRef(null);
   const [user, setUser] = useState(null);          // logged-in AuthUser or null
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [view, setView] = useState("landing");      // "landing" | "build" | "pricing"
+  const [view, setView] = useState("landing");      // "landing" | "build" | "pricing" | "privacy" | "terms"
   const [pricingReturnView, setPricingReturnView] = useState("landing");
+  const [legalReturnView, setLegalReturnView] = useState("landing");
 
   const openPricing = (from) => { setPricingReturnView(from); setView("pricing"); };
+  const openLegal = (doc, from) => { setLegalReturnView(from); setView(doc); };
 
   // Watch Neon Better Auth session state — fires on sign-in/out & OAuth
   // redirect back from Google.
@@ -229,7 +234,30 @@ function App() {
             fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px",
           },
         }} />
-        <LandingPage onStart={() => setView("build")} onPricing={() => openPricing("landing")} />
+        <LandingPage
+          onStart={() => setView("build")}
+          onPricing={() => openPricing("landing")}
+          onLegal={(doc) => openLegal(doc, "landing")}
+          user={user}
+          checkingAuth={checkingAuth}
+          onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
+        />
+      </div>
+    );
+  }
+
+  if (view === "privacy" || view === "terms") {
+    return (
+      <div className="App relative" data-testid="app-root">
+        <Toaster position="bottom-right" toastOptions={{
+          style: {
+            background: "#15171D", border: "1px solid #2A2E38",
+            color: "#EDEDF0", borderRadius: "8px",
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px",
+          },
+        }} />
+        <LegalPage doc={view} onBack={() => setView(legalReturnView)} />
       </div>
     );
   }
@@ -246,9 +274,12 @@ function App() {
         }} />
         <PricingPage
           user={user}
+          checkingAuth={checkingAuth}
           onBack={() => setView(pricingReturnView)}
           onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
           onStart={() => setView("build")}
+          onLegal={(doc) => openLegal(doc, "pricing")}
         />
       </div>
     );
@@ -286,6 +317,13 @@ function App() {
               <span className="text-xs font-mono text-text2 hidden sm:inline">
                 {user.name || user.email}
               </span>
+              <button
+                data-testid="open-profile"
+                onClick={() => setProfileOpen(true)}
+                className="flex items-center gap-2 border border-line rounded-md text-text2 px-3 py-2 hover:border-text3 transition-colors text-xs"
+              >
+                <User size={14} /> profile
+              </button>
               <button
                 data-testid="sign-out"
                 onClick={handleSignOut}
@@ -377,7 +415,14 @@ function App() {
         )}
 
         <footer className="text-center text-text3 font-mono text-xs py-6 border-t border-line" data-testid="footer">
-          capcode · session {sessionId.slice(0, 8)} · © {new Date().getFullYear()}
+          capcode · session {sessionId.slice(0, 8)} · © {new Date().getFullYear()} ·{" "}
+          <button data-testid="footer-privacy-link" onClick={() => openLegal("privacy", "build")} className="hover:text-text2 underline">
+            privacy
+          </button>{" "}
+          ·{" "}
+          <button data-testid="footer-terms-link" onClick={() => openLegal("terms", "build")} className="hover:text-text2 underline">
+            terms
+          </button>
         </footer>
       </main>
 
@@ -387,6 +432,12 @@ function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onSaved={(a) => { setAssignments(a); toast.success("agents saved"); }}
+      />
+
+      <ProfilePanel
+        user={user}
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
       />
     </div>
   );

@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only P0 auth-fix verification on the preview URL. Confirmed: app loads with ZERO console/page errors and NO bogus '/get-jwt-token' request (the reported bug is gone); pricing page renders 3 plans with correct signed-out CTA copy; clicking plan-trial-cta cleanly initiates the Neon->Google OAuth chain (sign-in/social 200 -> social/init 302 -> accounts.google.com 302/200) with no JS errors; build-view regression passes; tab title 'CapCode - Recursive App Builder' and /favicon.ico returns 200 image/x-icon. Also simulated an OAuth return with ?neon_auth_session_verifier=fake: the Neon client now correctly calls GET /neondb/auth/get-session?neon_auth_session_verifier=..., proving the verifier is consumed, and the param is stripped from the URL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "post-OAuth view restore (sessionStorage 'capcode.pre_auth_view')", "issue": "Under React.StrictMode (dev double-mount) the first effect run removes 'capcode.pre_auth_view' from sessionStorage BEFORE the `if (alive) setView(...)` guard, so the item is consumed but the view is never restored (verified: storage value became null yet landing view stayed, pricing not restored). Dev-only today, but the remove-before-alive-check ordering is fragile; move sessionStorage.removeItem inside the `if (alive)` branch (App.js ~line 63-67).", "affected_selectors": ["[data-testid=\"pricing-page\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional hardening: in App.js move sessionStorage.removeItem('capcode.pre_auth_view') inside the `if (alive)` guard so the pre-auth view isn't consumed on a discarded StrictMode effect run.",
+    "Real end-to-end Google sign-in must still be verified by the human user on the deployed Vercel app (cannot be automated)."
+  ],
+  "critical_code_review_comments": [
+    "authClient.js uses the non-public createInternalNeonAuth() from @neondatabase/auth 0.5.0-beta; pin the version in package.json since the internal factory may change/disappear across beta releases.",
+    "Verified network trace shows getSession() hits /neondb/auth/get-session with the verifier param — this is the correct Neon cross-domain handoff; no /get-jwt-token call is made anymore."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested", "frontend": "95%"},
+  "seed_data_creation": "none",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "No Google test account available; /app/memory/test_credentials.md documents anonymous session + Neon Auth model only.",
+  "context_for_next_testing_agent": "Auth client swap verified clean (no console errors, no 404 bogus endpoints, OAuth redirect reaches accounts.google.com). Landing/pricing/build views all regression-clean. Only open item: StrictMode pre_auth_view consumption ordering in App.js. api/status + api/chains ERR_ABORTED entries seen in logs were caused by test-triggered navigations aborting in-flight XHRs, not real failures (/api/status returns 200 via curl).",
+  "rca_of_the_issue": "Original bug: raw better-auth/react client never consumed Neon's ?neon_auth_session_verifier param and its auto-generated proxy issued a 404 /get-jwt-token call, so the session never finalized. After switching to createInternalNeonAuth + explicit getSession() before getJwt(), the network trace now shows the verifier being posted to Neon's /get-session endpoint and no bogus JWT endpoint call."
+}

@@ -8,7 +8,24 @@
 // so sign-in silently never completed.
 import { createInternalNeonAuth } from "@neondatabase/auth";
 
-const NEON_AUTH_URL = process.env.REACT_APP_NEON_AUTH_URL;
+// IMPORTANT: the client must talk to a SAME-ORIGIN proxy, never Neon's raw
+// auth domain directly. If it hits Neon's domain directly, the session
+// cookie Neon sets is scoped to Neon's own domain — third-party relative to
+// this app's domain — which Safari/iOS (and Chrome's newer third-party
+// cookie phase-out) silently drops, so get-session always comes back null
+// right after a successful OAuth redirect. Routing through `/api/neon-auth`
+// (same-origin) makes the cookie first-party in every environment:
+//  - This Emergent preview: `/api/*` is ingress-routed to the FastAPI
+//    backend, which has its own `/api/neon-auth/{path}` reverse proxy.
+//  - Vercel production: `/api/*` resolves to the serverless function at
+//    `api/neon-auth/[...path].js`, which proxies to the same NEON_AUTH_URL.
+// better-auth's client requires an absolute URL (it rejects relative paths),
+// so we build one from the current origin at runtime instead of baking a
+// fixed domain into the build.
+const NEON_AUTH_URL =
+  typeof window !== "undefined" && window.location
+    ? `${window.location.origin}/api/neon-auth`
+    : process.env.REACT_APP_NEON_AUTH_URL;
 
 if (!NEON_AUTH_URL) {
   console.error(

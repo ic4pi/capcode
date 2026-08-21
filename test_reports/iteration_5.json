@@ -1,0 +1,51 @@
+{
+  "summary": "Verified all 4 changes (rater swap + startup validator, ownership stamping, owner-filtered reads/writes, automatic anon session id) plus anonymous/signed-in build regressions. 49/50 backend tests pass. Two real defects found: (1) POST /api/chains/{id}/workspace/{gen} is the only chain endpoint that was NOT owner-filtered — a non-owner gets 200 and the victim's file listing + files materialized to /workspaces (security leak, FIX #3 gap). (2) The new rater slug openai/gpt-3.5-turbo parrots the zero-filled JSON template in SYSTEM_RATER, so every build now scores 0.0 on all 5 dims and composite_score = -0.1 (reproduced 3/3 direct calls + 3/3 real builds) — the startup validator passes because it only checks that the model responds, not that scores are meaningful.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/chains/{id}/workspace/{gen}", "issue": "No owner filter (server.py:707-747 queries db.chains.find_one({'id': chain_id}) only). Verified with curl: intruder session got 200 with {'workspace_path','files':['index.html','run.sh','README.md']} for a chain owned by 'regression-owner', and the victim's files were re-materialized to /workspaces. Must accept `request: Request` and use `_owner_filter`, returning 404 'chain not found'.", "priority": "CRITICAL"},
+      {"endpoint": "rater (openrouter/openai/gpt-3.5-turbo)", "issue": "Rater returns the literal example JSON from SYSTEM_RATER ('{\"helpfulness\":0.0,...,\"verbosity\":0.0}') verbatim. 3/3 direct probes and 3/3 full builds produced all-zero rewards -> composite_score -0.1 shown in the UI with empty score bars. Breaks the recursive exemplar-ranking loop (verified-chain scoring). Fix: use a stronger primary rater (e.g. openai/gpt-4o-mini, currently only the fallback), remove the all-zeros literal from the prompt, and treat an all-zero/degenerate response as invalid so rate_step falls back to the deterministic started-based score.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/status", "issue": "'CHAINS :: 26' badge is a global, cross-tenant chain count rendered to every anonymous visitor. Not a prompt leak, but it is not owner-scoped like everything else — confirm this is intentional."},
+      {"endpoint": "POST /api/evolve", "issue": "Model assignments are still resolved from db.settings using the body-level req.session_id only, so a signed-in user who sends no body session_id always gets DEFAULT_ASSIGNMENTS (BYOK/model prefs are not honoured on the auth path)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ChainViewer scores panel", "issues": ["All five reward bars render empty and COMPOSITE shows -0.100 for every build (downstream of the rater defect); a negative composite is also displayed without any indication that scoring failed"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ownership.py",
+    "/app/backend/tests/test_e2e_regression.py",
+    "/app/backend/tests/test_security_fixes.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/ownership.xml"
+  ],
+  "action_items": [
+    "Add owner filtering to POST /api/chains/{id}/workspace/{gen} (only unprotected chain endpoint left)",
+    "Fix rater scoring: swap primary rater to a stronger model, drop the all-zeros literal from SYSTEM_RATER, and reject degenerate all-zero score payloads in rate_step()",
+    "Make _validate_default_rater assert a non-degenerate score (e.g. sum > 0) instead of just a 200 response",
+    "Optionally resolve model assignments/BYOK from the resolved owner (user_id) instead of body session_id only"
+  ],
+  "critical_code_review_comments": [
+    "server.py:707 open_in_vscode lacks `request: Request` + `_owner_filter` — inconsistent with the other 8 endpoints and leaks another owner's file tree.",
+    "_owner_filter's no-identity sentinel {'_id': '__no_owner__'} works but relies on Mongo type mismatch; a clearly-impossible filter such as {'id': {'$in': []}} is safer and index-friendly.",
+    "chain_generator.rate_step treats a parsed-but-empty/zeroed payload as valid (`if not data` only), so the deterministic fallback never triggers for a model that echoes the template.",
+    "server.py is 1024 lines — consider splitting routers (chains, auth, settings, github) into modules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ownership.py (new)",
+    "/app/backend/tests/test_e2e_regression.py (added X-Capcode-Session / ?session_id to pre-ownership requests)",
+    "/app/backend/tests/test_security_fixes.py (seeded anon_session_id on fixture chains + push headers)"
+  ],
+  "success_rate": {"backend": "98% (49/50 tests; 1 genuine failure = workspace ownership leak)", "frontend": "100% of tested flows (anon session bootstrap, header injection, build e2e, archive isolation, downloads)"},
+  "seed_data_creation": "Temporary: user_TESTAUTH + session MY_TEST_TOKEN, chains for TEST_ownerA/B, sse-owner, regression-owner, TEST_settings — all deleted after the run.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Anonymous: any UUID in X-Capcode-Session or ?session_id. Signed-in: seed user_TESTAUTH/MY_TEST_TOKEN per /app/auth_testing.md (fixture `seeded_auth` in test_ownership.py does this automatically).",
+  "context_for_next_testing_agent": "Verified PASS: rater startup validator logs 'rater validation ok: openrouter/openai/gpt-3.5-turbo'; providers.py rater=openai/gpt-3.5-turbo, fallback gpt-4o-mini. Ownership matrix a-j all pass (owner 200, non-owner 404 on GET/download/download/{gen}/verify/push/stream, empty list for other owner, empty list for no identity, 400 'no session identity' on identity-less POST /evolve, ?session_id= fallback works). Signed-in chain stamped user_id=user_TESTAUTH with no anon_session_id; random anon gets 404. Frontend: localStorage['capcode.session_id'] set on first load with no click; all 6 /api/* requests carried X-Capcode-Session; browser fetch /api/chains -> 200 []. Full UI build (digital clock) completed, executor started, archive shows only own chain, download and download/{gen} links carry ?session_id and return 200. SSE emits teacher_delta mid-build and 404s for non-owner. GitHub push contract intact (404 unknown chain / 409 incomplete / 400 missing creds). /api/auth/me 401 without session, 200 with bearer. Re-run `pytest /app/backend/tests/ -p no:randomly` after fixes; test_ownership.py::test_workspace_endpoint_owner_scoped is the failing regression guard.",
+  "rca_of_the_issue": "Workspace leak: open_in_vscode was missed when _owner_filter was applied to the other endpoints; it still queries by chain id alone. Rater zeros: SYSTEM_RATER embeds a fully zero-filled JSON example and gpt-3.5-turbo (weak instruction-following) echoes it at temperature 0.1; _extract_json succeeds so rate_step's `if not data` fallback never fires, and composite() computes 0.35*0+...-0.05*|0-2| = -0.1."
+}

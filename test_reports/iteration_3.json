@@ -1,0 +1,43 @@
+{
+  "summary": "Backend-only verification of the 3 security fixes (SEC-001 env scrubbing, SEC-002 path traversal, SEC-004 GitHub PAT/argv) plus 4 regression areas (e2e WebGL build, BYOK settings, SSE deltas, orphan sweep). 16/16 pytest cases pass. SEC-001 verified by directly calling executor.run_workspace() on a scripted workspace that dumps `env`: child env contained ONLY PATH/HOME/PWD/SHLVL/_/APP_PORT — no NVIDIA_API_KEY, OPENROUTER_API_KEY, VENICE_API_KEY, MONGO_URL or DB_NAME, and none of their raw values appeared in the dump. SEC-002 verified by calling executor.materialize() with malicious paths (../../etc/passwd, /tmp/pwned, ..\\pwn, dir/../../out, x\\x00y, a/b/../../../../oops.txt): nothing was written outside /workspaces/<chain[:8]>/<name>/ (canaries /tmp/pwned, /workspaces/out, /workspaces/oops.txt absent), legit relative paths (src/main.py, sub/dir/file.txt, run.sh, index.html) still written, run.sh chmod 0755. SEC-004 contract verified: 404 unknown chain, 409 chain not complete, 400 'github credentials missing'; source uses GIT_ASKPASS and --force only when was_created. Regression: /api/evolve built a real WebGL page end-to-end in ~50s, status=complete, generations[0].exec.started=true, index.html contained canvas/getContext + shader code (>800 chars, not boilerplate), zip download returns a valid PK archive. SSE stream emitted 90 teacher_delta + 43 artist_delta events with non-empty data in a 25s window. Orphan sweep: a manually inserted running chain was marked failed with error 'backend restarted before build finished — try again' after supervisorctl restart backend. BYOK settings never echo secret values back (GET/POST responses contain neither sk-or-test-value nor ghp_test; keys_set.openrouter=true, github.token_set=true), and clearing a key works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "executor.materialize()", "issue": "Defense-in-depth guard is weaker than chain_generator._is_safe_relpath: backslashes are not rejected, so a path like '..\\\\pwn' is written as a LITERAL filename inside the workspace, and '/tmp/pwned' is silently rewritten to '<root>/tmp/pwned' instead of being dropped. Both stay inside the workspace root on POSIX (no actual traversal), but the two guards are inconsistent and the backslash form would traverse on a Windows/SMB-mounted volume. Recommend reusing the same _is_safe_relpath predicate in materialize() and in the push endpoint."},
+      {"endpoint": "uvicorn --reload watch scope", "issue": "The backend watcher reloads on any change under /app/backend, including /app/backend/tests/*.py. Writing a test file restarts the backend, which triggers _sweep_orphans and kills any in-flight build. Not a product bug, but it makes long e2e tests flaky; consider --reload-exclude tests/*."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_fixes.py",
+    "/app/backend/tests/test_e2e_regression.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (minor hardening): share one path predicate — move _is_safe_relpath into a util and call it from executor.materialize() and push_to_github() so backslash/absolute paths are dropped rather than silently rewritten.",
+    "OPTIONAL: exclude /app/backend/tests from the uvicorn reload watcher so test-file writes don't restart the backend mid-build."
+  ],
+  "critical_code_review_comments": [
+    "SEC-001 implementation is correct and complete: whitelist-based env dict (not os.environ copy), plus preexec_fn=os.setsid and process-group kill so child servers are reaped. Verified empirically.",
+    "SEC-004: PAT no longer appears in argv; token is only passed through GIT_ASKPASS env and stderr is scrubbed with .replace(token, '***'). Note GIT_TOKEN is still visible in the child git process env (/proc/<pid>/environ) — unavoidable with askpass, and much better than argv.",
+    "push_to_github() re-implements the path sanitizer inline (3rd copy of the same logic) — DRY violation.",
+    "server.py uses deprecated @app.on_event startup/shutdown; migrate to lifespan handlers.",
+    "Stale test file /app/backend/tests/test_code_builder.py targeted the removed /api/builds API (404 now) and was deleted."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_security_fixes.py (new)",
+    "/app/backend/tests/test_e2e_regression.py (new)",
+    "/app/backend/tests/test_code_builder.py (deleted — obsolete /api/builds API)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Temporary mongo chains for the 404/409 push cases (deleted in teardown), one real chain built via /api/evolve session_id='regression-test' (left in place), settings docs for random byok-* session ids. Test workspaces under /workspaces/sec002* were removed.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "No auth. session_id is any UUID string (/app/memory/test_credentials.md).",
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/ -v. test_security_fixes.py is fast and hermetic (uses asyncio.run since pytest-asyncio is not installed; no pytest.ini in /app/backend). test_e2e_regression.py does a LIVE LLM build (~50-90s) and must run without concurrent backend restarts. The orphan-sweep test restarts the backend via supervisorctl — run it last or expect a ~20s outage. SEC-002 test intentionally tolerates '..\\\\pwn' and 'tmp/pwned' inside the workspace root (documented minor issue).",
+  "rca_of_the_issue": "No blocking issue. The only finding is a consistency gap: executor.materialize() relies purely on resolve()+relative_to() containment, which neutralises absolute paths (lstrip('/')) and treats backslashes as ordinary filename characters, whereas chain_generator._is_safe_relpath rejects both outright. Containment holds on POSIX so there is no exploitable traversal today."
+}
