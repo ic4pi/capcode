@@ -198,11 +198,9 @@ export const PricingPage = ({ user, onBack, onSignIn, onSignOut, checkingAuth, o
               <div className="text-text3 text-xs font-mono mt-1">cancel anytime</div>
               <ul className="mt-6 space-y-3 flex-1">
                 <Feature>Full 6-role team — Architect + Reviewer added</Feature>
-                <Feature>$8 API budget/mo — covers your own builds</Feature>
-                <Feature>$4 recursion fund — pays for the automatic
-                  refinement loop when a build scores under 80</Feature>
-                <Feature>Credit Rebirth — the loop's cost is refunded when
-                  it produces a genuinely better build</Feature>
+                <Feature>Generous monthly build credits — enough for real day-to-day use</Feature>
+                <Feature>Automatic quality refinement on builds that need it —
+                  no extra charge if it doesn't help</Feature>
                 {annual && <Feature>Credits still refill every 30 days, same as monthly</Feature>}
               </ul>
               <button
@@ -217,16 +215,9 @@ export const PricingPage = ({ user, onBack, onSignIn, onSignOut, checkingAuth, o
           </div>
 
           <div className="mt-10 pt-6 border-t border-line text-xs text-text3 max-w-2xl leading-relaxed font-mono">
-            The trial's ${fmt(prices.trial.amount)} is a one-time charge, not a subscription — it's
-            priced to exactly cover the NVIDIA compute cost of a full 6-role
-            trial build plus its automatic refinement pass, so the trial never
-            runs at a loss. "Recursion fund" and "Credit Rebirth" describe how
-            the paid plan spends and recoups your subscription internally —
-            $8 covers your build calls, $4 is reserved to pay for one
-            refinement pass per build, and that $4 is credited back to your
-            budget whenever the refinement pass produces a Knowledge Module
-            worth keeping for future builds. Annual billing doesn't change any
-            of that — it's the same monthly credit refill, just paid once a year.
+            The trial's ${fmt(prices.trial.amount)} is a one-time charge, not a subscription.
+            Annual billing doesn't change how credits work — it's the same
+            monthly refill, just paid once a year.
           </div>
         </div>
       </main>
