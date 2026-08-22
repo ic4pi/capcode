@@ -330,15 +330,29 @@ async def neon_auth_proxy(path: str, request: Request):
     # hit (e.g. .../api/neon-auth/get-session?debug=1) and read the result
     # directly on screen -- no devtools, no dashboard log access needed.
     if debug_mode:
+        jwt_value = upstream.headers.get("set-auth-jwt")
+        jwt_claims = None
+        jwt_decode_error = None
+        if jwt_value:
+            try:
+                # Decode without verifying signature/audience -- this debug
+                # view exists specifically to SEE what's inside before
+                # deciding whether the backend's audience check is wrong.
+                jwt_claims = _pyjwt.decode(jwt_value, options={"verify_signature": False})
+            except Exception as exc:
+                jwt_decode_error = str(exc)
         return Response(
             content=json.dumps({
                 "upstream_status": upstream.status_code,
-                "set_auth_jwt": "present" if upstream.headers.get("set-auth-jwt") else "MISSING",
+                "set_auth_jwt": "present" if jwt_value else "MISSING",
+                "jwt_claims": jwt_claims,
+                "jwt_decode_error": jwt_decode_error,
+                "backend_expected_audience": _NEON_AUTH_ORIGIN,
                 "set_cookie_count": len(upstream.headers.get_list("set-cookie")),
                 "set_cookie_raw": upstream.headers.get_list("set-cookie"),
                 "all_upstream_headers": list(upstream.headers.keys()),
                 "body_preview": upstream.content[:800].decode("utf-8", errors="replace"),
-            }, indent=2),
+            }, indent=2, default=str),
             media_type="application/json",
         )
     resp = Response(content=upstream.content, status_code=upstream.status_code,
