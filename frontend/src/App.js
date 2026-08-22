@@ -241,9 +241,26 @@ function App() {
     }
   };
 
+  // TEMP: on-screen auth debug banner, only rendered with ?authdebug=1 in
+  // the URL. Declared once, injected into every early-return view below --
+  // "landing"/"privacy"/"terms"/"pricing" each return their own JSX before
+  // reaching the default return further down. Remove all of this once
+  // sign-in is confirmed working end to end.
+  const authDebugBanner = window.location.search.includes("authdebug=1") && (
+    <pre style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 99999,
+      background: "#000", color: "#0f0", fontSize: "11px",
+      padding: "8px", maxHeight: "40vh", overflow: "auto",
+      whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
+    }}>
+      {JSON.stringify({ user, checkingAuth, ...authDebug }, null, 2)}
+    </pre>
+  );
+
   if (view === "landing") {
     return (
       <div className="App relative" data-testid="app-root">
+        {authDebugBanner}
         <Toaster position="bottom-right" toastOptions={{
           style: {
             background: "#15171D", border: "1px solid #2A2E38",
@@ -267,6 +284,7 @@ function App() {
   if (view === "privacy" || view === "terms") {
     return (
       <div className="App relative" data-testid="app-root">
+        {authDebugBanner}
         <Toaster position="bottom-right" toastOptions={{
           style: {
             background: "#15171D", border: "1px solid #2A2E38",
@@ -282,6 +300,7 @@ function App() {
   if (view === "pricing") {
     return (
       <div className="App relative" data-testid="app-root">
+        {authDebugBanner}
         <Toaster position="bottom-right" toastOptions={{
           style: {
             background: "#15171D", border: "1px solid #2A2E38",
@@ -304,16 +323,7 @@ function App() {
 
   return (
     <div className="App relative" data-testid="app-root">
-      {window.location.search.includes("authdebug=1") && (
-        <pre style={{
-          position: "fixed", top: 0, left: 0, right: 0, zIndex: 99999,
-          background: "#000", color: "#0f0", fontSize: "11px",
-          padding: "8px", maxHeight: "40vh", overflow: "auto",
-          whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
-        }}>
-          {JSON.stringify({ user, checkingAuth, ...authDebug }, null, 2)}
-        </pre>
-      )}
+      {authDebugBanner}
       <Toaster position="bottom-right" toastOptions={{
         style: {
           background: "#15171D", border: "1px solid #2A2E38",
