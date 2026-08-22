@@ -309,14 +309,20 @@ async def neon_auth_proxy(path: str, request: Request):
         raise HTTPException(502, f"neon auth upstream unreachable: {exc}")
     # TEMP DIAGNOSTIC — confirm Neon actually sends the session JWT header
     # and how many Set-Cookie headers came back, before/after Domain stripping.
+    # Using print() instead of logging.info(): this environment's root logger
+    # has no configured handler, so logging.info() was silently swallowed on
+    # the last attempt despite the code executing correctly. print() always
+    # hits stdout regardless of logging config.
     # Remove once sign-in is confirmed working end to end.
-    logging.info(
-        "[neon-auth proxy] %s %s -> %s | set-auth-jwt=%s | set-cookie count=%d | headers=%s",
-        request.method, path, upstream.status_code,
-        "present" if upstream.headers.get("set-auth-jwt") else "MISSING",
-        len(upstream.headers.get_list("set-cookie")),
-        list(upstream.headers.keys()),
+    print(
+        f"[neon-auth proxy] {request.method} {path} -> {upstream.status_code} | "
+        f"set-auth-jwt={'present' if upstream.headers.get('set-auth-jwt') else 'MISSING'} | "
+        f"set-cookie count={len(upstream.headers.get_list('set-cookie'))} | "
+        f"headers={list(upstream.headers.keys())}",
+        flush=True,
     )
+    if upstream.status_code >= 400:
+        print(f"[neon-auth proxy] non-2xx body: {upstream.content[:500]!r}", flush=True)
     resp = Response(content=upstream.content, status_code=upstream.status_code,
                     media_type=upstream.headers.get("content-type"))
     for key, value in upstream.headers.multi_items():
