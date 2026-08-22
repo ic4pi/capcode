@@ -307,11 +307,28 @@ async def neon_auth_proxy(path: str, request: Request):
         )
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"neon auth upstream unreachable: {exc}")
+    # TEMP DIAGNOSTIC — confirm Neon actually sends the session JWT header
+    # and how many Set-Cookie headers came back, before/after Domain stripping.
+    # Remove once sign-in is confirmed working end to end.
+    logging.info(
+        "[neon-auth proxy] %s %s -> %s | set-auth-jwt=%s | set-cookie count=%d | headers=%s",
+        request.method, path, upstream.status_code,
+        "present" if upstream.headers.get("set-auth-jwt") else "MISSING",
+        len(upstream.headers.get_list("set-cookie")),
+        list(upstream.headers.keys()),
+    )
     resp = Response(content=upstream.content, status_code=upstream.status_code,
                     media_type=upstream.headers.get("content-type"))
     for key, value in upstream.headers.multi_items():
         lk = key.lower()
         if lk == "set-cookie":
+            # Neon sets Domain= scoped to its own host (*.neon.tech). Forwarded
+            # verbatim, the browser is now on THIS app's domain and silently
+            # rejects the cookie for a domain mismatch -- no error, it just
+            # never sticks. Strip it so the cookie defaults to the domain
+            # that's actually setting it (this app) -- the whole point of
+            # proxying through here instead of hitting Neon directly.
+            value = re.sub(r";\s*Domain=[^;]*", "", value, flags=re.IGNORECASE)
             resp.headers.append(key, value)
         elif lk not in ("content-length", "content-encoding", "transfer-encoding", "connection"):
             resp.headers[key] = value
