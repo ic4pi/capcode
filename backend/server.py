@@ -300,9 +300,11 @@ async def neon_auth_proxy(path: str, request: Request):
             "x-forwarded-port", "forwarded",
         )
     }
+    debug_mode = request.query_params.get("debug") == "1"
+    fwd_params = {k: v for k, v in request.query_params.items() if k != "debug"}
     try:
         upstream = await _neon_proxy_client.request(
-            request.method, target, params=request.query_params,
+            request.method, target, params=fwd_params,
             content=body, headers=fwd_headers,
         )
     except httpx.HTTPError as exc:
@@ -323,6 +325,22 @@ async def neon_auth_proxy(path: str, request: Request):
     )
     if upstream.status_code >= 400:
         print(f"[neon-auth proxy] non-2xx body: {upstream.content[:500]!r}", flush=True)
+
+    # Mobile-visible debug mode: append ?debug=1 to the URL you'd normally
+    # hit (e.g. .../api/neon-auth/get-session?debug=1) and read the result
+    # directly on screen -- no devtools, no dashboard log access needed.
+    if debug_mode:
+        return Response(
+            content=json.dumps({
+                "upstream_status": upstream.status_code,
+                "set_auth_jwt": "present" if upstream.headers.get("set-auth-jwt") else "MISSING",
+                "set_cookie_count": len(upstream.headers.get_list("set-cookie")),
+                "set_cookie_raw": upstream.headers.get_list("set-cookie"),
+                "all_upstream_headers": list(upstream.headers.keys()),
+                "body_preview": upstream.content[:800].decode("utf-8", errors="replace"),
+            }, indent=2),
+            media_type="application/json",
+        )
     resp = Response(content=upstream.content, status_code=upstream.status_code,
                     media_type=upstream.headers.get("content-type"))
     for key, value in upstream.headers.multi_items():
