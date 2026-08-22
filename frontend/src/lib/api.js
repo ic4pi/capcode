@@ -1,7 +1,12 @@
 import axios from "axios";
 import { getJwt } from "@/lib/authClient";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// No REACT_APP_BACKEND_URL -> same-origin relative /api (the correct
+// default now that the backend runs natively on this Vercel deployment,
+// not a separate Render service). Must default to "", not leave this
+// undefined -- `${undefined}/api` template-literals to the literal string
+// "undefined/api", a broken relative path, not an absolute /api root.
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
 export const API = `${BACKEND_URL}/api`;
 
 // Anonymous session id — created once per browser, persisted in localStorage.
