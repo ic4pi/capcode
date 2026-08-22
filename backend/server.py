@@ -333,6 +333,8 @@ async def neon_auth_proxy(path: str, request: Request):
         jwt_value = upstream.headers.get("set-auth-jwt")
         jwt_claims = None
         jwt_decode_error = None
+        verified_claims = None
+        verified_error = None
         if jwt_value:
             try:
                 # Decode without verifying signature/audience -- this debug
@@ -341,12 +343,21 @@ async def neon_auth_proxy(path: str, request: Request):
                 jwt_claims = _pyjwt.decode(jwt_value, options={"verify_signature": False})
             except Exception as exc:
                 jwt_decode_error = str(exc)
+            try:
+                # The REAL check /auth/me runs -- same function, same JWKS
+                # client. If this succeeds, the bug isn't in verification at
+                # all and must be in how the frontend attaches the header.
+                verified_claims = _verify_neon_jwt(jwt_value)
+            except Exception as exc:
+                verified_error = f"{type(exc).__name__}: {exc}"
         return Response(
             content=json.dumps({
                 "upstream_status": upstream.status_code,
                 "set_auth_jwt": "present" if jwt_value else "MISSING",
                 "jwt_claims": jwt_claims,
                 "jwt_decode_error": jwt_decode_error,
+                "verified_via_auth_me_logic": "success" if verified_claims else "FAILED",
+                "verified_error": verified_error,
                 "backend_expected_audience": _NEON_AUTH_ORIGIN,
                 "set_cookie_count": len(upstream.headers.get_list("set-cookie")),
                 "set_cookie_raw": upstream.headers.get_list("set-cookie"),
