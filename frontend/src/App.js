@@ -14,6 +14,28 @@ import { PricingPage } from "@/components/PricingPage";
 import { LegalPage } from "@/components/LegalPage";
 import { AmbientBackground } from "@/components/AmbientBackground";
 
+// Decode a Neon Auth JWT's payload claims into a provisional AuthUser shape,
+// WITHOUT verifying the signature -- purely so the UI can show "signed in"
+// immediately using data the browser already has, instead of blocking on
+// api.authMe() (which runs on Render and can be cold-started/slow). The
+// backend still verifies the JWT properly on every real request; this is
+// only ever used for optimistic UI state.
+function decodeJwtUser(jwt) {
+  try {
+    const payload = jwt.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const claims = JSON.parse(decodeURIComponent(escape(json)));
+    return {
+      user_id: claims.sub || claims.id,
+      email: claims.email,
+      name: claims.name,
+      picture: claims.picture || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getSessionId() {
   const KEY = "capcode.session_id";
   let s = localStorage.getItem(KEY);
@@ -87,11 +109,36 @@ function App() {
           if (alive) setUser(null);
           return;
         }
-        const me = await api.authMe();
-        if (window.location.search.includes("authdebug=1")) {
-          setAuthDebug(d => ({ ...d, authMeResult: me }));
+        // The JWT itself already carries name/email/id (Neon puts them in
+        // the claims). Use that to show the user as signed-in IMMEDIATELY --
+        // api/auth/me runs on Render, which can be cold-started and slow to
+        // wake; don't make the whole UI wait on that round-trip just to
+        // render the signed-in state. This also fires the Render request
+        // right away instead of blocking on it, so it's warm well before
+        // anyone finishes typing a prompt.
+        const provisional = decodeJwtUser(jwt);
+        if (alive && provisional) setUser(provisional);
+        if (alive) setCheckingAuth(false);
+        try {
+          const me = await api.authMe();
+          if (window.location.search.includes("authdebug=1")) {
+            setAuthDebug(d => ({ ...d, authMeResult: me }));
+          }
+          if (alive) setUser(me);
+        } catch (exc) {
+          // authMe() failing after we already have a provisional user from
+          // the JWT isn't a sign-out -- Render being slow/cold-starting
+          // shouldn't kick someone back to "not signed in". Keep the
+          // provisional user and just surface the error for debugging.
+          if (window.location.search.includes("authdebug=1")) {
+            setAuthDebug(d => ({
+              ...d,
+              authMeError: `${exc?.name || "Error"}: ${exc?.message || String(exc)}`,
+              authMeErrorStatus: exc?.response?.status,
+            }));
+          }
         }
-        if (alive) setUser(me);
+        return;
       } catch (exc) {
         if (window.location.search.includes("authdebug=1")) {
           setAuthDebug(d => ({
