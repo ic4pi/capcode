@@ -4,6 +4,17 @@
 // auth domain — that cross-site cookie is exactly what Safari (and other
 // strict-cookie browsers) blocks, which is why sign-in has been failing.
 //
+// *** THIS FILE IS CURRENTLY SHADOWED / NOT EXECUTING. ***
+// vercel.json's "/api/(.*)" rewrite routes ALL /api/* traffic -- including
+// /api/neon-auth/* -- to api/index.py (the FastAPI backend), which has its
+// own duplicate proxy at backend/server.py's neon_auth_proxy(). Confirmed
+// via production logs: httpx-style "HTTP Request: ..." log lines appear for
+// every /api/neon-auth/* call, and diagnostic console.log added to THIS file
+// never appeared in the same window despite matching 200 responses. Fixes
+// belong in backend/server.py's neon_auth_proxy() until the routing
+// conflict between the two is resolved -- don't spend time here without
+// first confirming (via logs) that this file is actually being invoked.
+//
 // NOTE: `config.api.bodyParser` is a Next.js convention. This project has
 // "framework": null in vercel.json, so Vercel's plain Node runtime may or
 // may not honor it -- don't assume either way. Handle both cases: if
