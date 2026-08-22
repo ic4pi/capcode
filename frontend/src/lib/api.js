@@ -1,12 +1,11 @@
 import axios from "axios";
 import { getJwt } from "@/lib/authClient";
 
-// No REACT_APP_BACKEND_URL -> same-origin relative /api (the correct
-// default now that the backend runs natively on this Vercel deployment,
-// not a separate Render service). Must default to "", not leave this
-// undefined -- `${undefined}/api` template-literals to the literal string
-// "undefined/api", a broken relative path, not an absolute /api root.
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
+// This is a code-generation app -- LLM chain builds are long-running and
+// will hit Vercel's serverless execution limit. That compute belongs on
+// Render, which doesn't have that ceiling. Default here, in code, so it
+// doesn't depend on a Vercel dashboard env var existing or being correct.
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "https://capcode-dun6.onrender.com";
 export const API = `${BACKEND_URL}/api`;
 
 // Anonymous session id — created once per browser, persisted in localStorage.
