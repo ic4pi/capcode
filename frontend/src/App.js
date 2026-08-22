@@ -42,6 +42,9 @@ function App() {
   const esRef = useRef(null);
   const [user, setUser] = useState(null);          // logged-in AuthUser or null
   const [checkingAuth, setCheckingAuth] = useState(true);
+  // TEMP: on-screen auth debug banner, only rendered with ?authdebug=1 in
+  // the URL. Remove once sign-in is confirmed working end to end.
+  const [authDebug, setAuthDebug] = useState({});
   const [view, setView] = useState("landing");      // "landing" | "build" | "pricing" | "privacy" | "terms"
   const [pricingReturnView, setPricingReturnView] = useState("landing");
   const [legalReturnView, setLegalReturnView] = useState("landing");
@@ -77,13 +80,27 @@ function App() {
         // yet — anonymous visitors would otherwise 401 against /api/auth/me
         // on every mount + every 60s poll, for nothing but console noise.
         const jwt = await getJwt();
+        if (window.location.search.includes("authdebug=1")) {
+          setAuthDebug(d => ({ ...d, jwt: jwt ? `${jwt.slice(0, 24)}...(${jwt.length} chars)` : "null/empty" }));
+        }
         if (!jwt) {
           if (alive) setUser(null);
           return;
         }
         const me = await api.authMe();
+        if (window.location.search.includes("authdebug=1")) {
+          setAuthDebug(d => ({ ...d, authMeResult: me }));
+        }
         if (alive) setUser(me);
-      } catch (_) {
+      } catch (exc) {
+        if (window.location.search.includes("authdebug=1")) {
+          setAuthDebug(d => ({
+            ...d,
+            error: `${exc?.name || "Error"}: ${exc?.message || String(exc)}`,
+            errorStatus: exc?.response?.status,
+            errorBody: exc?.response?.data,
+          }));
+        }
         if (alive) setUser(null);
       } finally {
         if (alive) setCheckingAuth(false);
@@ -287,6 +304,16 @@ function App() {
 
   return (
     <div className="App relative" data-testid="app-root">
+      {window.location.search.includes("authdebug=1") && (
+        <pre style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 99999,
+          background: "#000", color: "#0f0", fontSize: "11px",
+          padding: "8px", maxHeight: "40vh", overflow: "auto",
+          whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
+        }}>
+          {JSON.stringify({ user, checkingAuth, ...authDebug }, null, 2)}
+        </pre>
+      )}
       <Toaster position="bottom-right" toastOptions={{
         style: {
           background: "#15171D", border: "1px solid #2A2E38",
